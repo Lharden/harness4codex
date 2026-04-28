@@ -118,6 +118,21 @@ def test_stop_blocks_unverified_active_pipeline_once(tmp_path):
     assert "verification" in data["reason"].lower()
 
 
+def test_stop_block_output_uses_codex_stop_schema_only(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
+        harness_home=tmp_path,
+    )
+
+    output = handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path)
+
+    data = _decode(output)
+    assert set(data) <= {"continue", "decision", "reason", "stopReason", "systemMessage", "suppressOutput"}
+    assert data["decision"] == "block"
+    assert data["reason"].strip()
+    assert "hookSpecificOutput" not in data
+
+
 def test_stop_hook_active_does_not_loop(tmp_path):
     output = handle_payload({"hook_event_name": "Stop", "stop_hook_active": True}, harness_home=tmp_path)
 

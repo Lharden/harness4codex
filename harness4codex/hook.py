@@ -76,7 +76,6 @@ def _block_stop(reason: str) -> str:
             "decision": "block",
             "reason": reason,
             "stopReason": reason,
-            "hookSpecificOutput": {"hookEventName": "Stop", "decision": "block", "reason": reason},
         }
     )
 

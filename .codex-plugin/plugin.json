@@ -1,6 +1,6 @@
 {
   "name": "harness4codex",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Codex-native workflow harness with hooks, state, skills, and git guardrails.",
   "author": {
     "name": "Lharden"
