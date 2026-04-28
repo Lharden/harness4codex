@@ -58,6 +58,56 @@ def test_session_start_resumes_active_pipeline(tmp_path):
     assert "Retome o pipeline" in _decode(output)["hookSpecificOutput"]["additionalContext"]
 
 
+def test_parallel_sessions_do_not_continue_each_other(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    handle_payload(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "session-a",
+            "cwd": str(repo),
+            "prompt": "Implemente exportacao CSV.",
+        },
+        harness_home=tmp_path,
+    )
+
+    output = handle_payload(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "session-b",
+            "cwd": str(repo),
+            "prompt": "Explique este modulo.",
+        },
+        harness_home=tmp_path,
+    )
+
+    context = _decode(output)["hookSpecificOutput"]["additionalContext"]
+    assert "Classificacao criada" in context
+    assert "Continue o pipeline ativo" not in context
+    assert "Level: C0 / question" in context
+
+
+def test_stop_gate_is_scoped_to_session(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    handle_payload(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "session-a",
+            "cwd": str(repo),
+            "prompt": "Implemente exportacao CSV.",
+        },
+        harness_home=tmp_path,
+    )
+
+    output = handle_payload(
+        {"hook_event_name": "Stop", "session_id": "session-b", "cwd": str(repo)},
+        harness_home=tmp_path,
+    )
+
+    assert output == ""
+
+
 def test_pre_tool_use_denies_dangerous_git(tmp_path):
     output = handle_payload(
         {

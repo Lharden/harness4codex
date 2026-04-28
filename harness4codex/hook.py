@@ -10,7 +10,7 @@ from typing import Any
 from .classifier import classify_prompt
 from .git_guard import inspect_command
 from .memory import HarnessMemoryStore
-from .state import HarnessStateStore
+from .state import HarnessStateStore, store_for_payload
 from .workflow import load_workflow
 
 
@@ -129,17 +129,22 @@ def _extract_exit_code(payload: dict[str, Any]) -> int | None:
 
 def _task_context(state: dict[str, Any], heading: str) -> str:
     pipeline = state.get("pipeline") or []
-    return "\n".join(
+    lines = [
+        "HARNESS4CODEX",
+        heading,
+        f"Task: {state.get('task_id')}",
+    ]
+    if state.get("scope"):
+        lines.append(f"Scope: {state.get('scope')}")
+    lines.extend(
         [
-            "HARNESS4CODEX",
-            heading,
-            f"Task: {state.get('task_id')}",
             f"Level: {state.get('level')} / {state.get('kind')}",
             f"Skill: codex-harness-workflow",
             f"Pipeline: {', '.join(pipeline) if pipeline else 'none'}",
             "Follow the listed skills in order. Do not claim completion until verification-before-completion has fresh evidence.",
         ]
     )
+    return "\n".join(lines)
 
 
 def _classification_context(state: dict[str, Any]) -> str:
@@ -268,7 +273,7 @@ def _handle_stop(payload: dict[str, Any], store: HarnessStateStore) -> str:
 
 def handle_payload(payload: dict[str, Any], harness_home: str | Path | None = None) -> str:
     event = _event_name(payload)
-    store = HarnessStateStore(harness_home)
+    store = store_for_payload(payload, harness_home)
     if event == "SessionStart":
         return _handle_session_start(event, store)
     if event == "UserPromptSubmit":

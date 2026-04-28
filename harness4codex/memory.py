@@ -172,16 +172,23 @@ class MemoryConsolidator:
         return ConsolidationReport(events_read=len(events), proposals=proposals, summary=summary)
 
     def _read_events(self) -> list[dict[str, Any]]:
-        if not self.events_path.exists():
-            return []
         events: list[dict[str, Any]] = []
-        for line in self.events_path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            try:
-                events.append(json.loads(line))
-            except json.JSONDecodeError:
-                events.append({"event": "InvalidEventLine", "payload": {"raw": line}})
+        event_paths = []
+        if self.events_path.exists():
+            event_paths.append(self.events_path)
+        sessions_dir = self.home / "sessions"
+        if sessions_dir.exists():
+            event_paths.extend(sorted(sessions_dir.glob("*/events.jsonl")))
+        for event_path in event_paths:
+            for line in event_path.read_text(encoding="utf-8").splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    event = json.loads(line)
+                    event.setdefault("_source", str(event_path))
+                    events.append(event)
+                except json.JSONDecodeError:
+                    events.append({"event": "InvalidEventLine", "payload": {"raw": line}, "_source": str(event_path)})
         return events
 
     def _build_proposals(self, events: list[dict[str, Any]]) -> list[dict[str, str]]:

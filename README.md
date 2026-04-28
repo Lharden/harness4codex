@@ -15,6 +15,7 @@ It uses Codex hooks, a local state machine, a workflow skill, and git guardrails
 - SQLite-backed searchable memory and consolidation proposals under `~/.codex/harness`.
 - CLI commands for status, workflow inspection, and memory search/consolidation.
 - Deterministic workspace primitives for future Symphony-style issue orchestration.
+- Codex app multitask safety: hook state is isolated by `session_id + cwd`, with owner-aware lock directories for each scoped state file.
 - Idempotent installer for `~/.codex/config.toml`, `~/.codex/hooks.json`, the plugin folder, and the direct skill folder.
 
 ## Install
@@ -77,6 +78,18 @@ python -m harness4codex memory consolidate
 ```
 
 `memory consolidate` creates auditable proposals in SQLite. It does not edit skills, hooks, workflow files, or git state.
+
+## Codex App Multitask Safety
+
+Codex hook payloads include `session_id` and `cwd`. Harness4Codex uses those fields to store each active app/CLI/IDE thread under:
+
+```text
+~/.codex/harness/sessions/<scope>/state.json
+```
+
+This prevents one local Codex app thread or worktree from continuing, blocking, or verifying another thread's pipeline. If a hook payload does not include `session_id`, Harness4Codex falls back to the legacy singleton `~/.codex/harness/state.json`.
+
+Each scoped state file uses a lock directory with an owner token and stale-lock cleanup. This follows the same concurrency lesson from Harness v3 for Claude Code Desktop: prevent concurrent read-modify-write corruption, but also adds Codex-specific session scoping to avoid logical task collisions.
 
 ## Notes
 

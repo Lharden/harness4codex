@@ -58,3 +58,18 @@ def test_consolidator_records_summary_history(tmp_path):
 
     assert results
     assert results[0]["event"] == "MemoryConsolidation"
+
+
+def test_consolidator_reads_session_event_logs(tmp_path):
+    session_dir = tmp_path / "sessions" / "s-abc"
+    session_dir.mkdir(parents=True)
+    (session_dir / "events.jsonl").write_text(
+        json.dumps({"event": "Stop", "payload": {"blocked": True, "reason": "verification gate"}}) + "\n",
+        encoding="utf-8",
+    )
+
+    report = MemoryConsolidator(tmp_path).consolidate()
+    proposals = HarnessMemoryStore(tmp_path).list_memories(kind="proposal")
+
+    assert report.events_read == 1
+    assert [proposal["key"] for proposal in proposals] == ["workflow-verification-reminder"]

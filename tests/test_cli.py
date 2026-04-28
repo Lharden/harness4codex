@@ -1,6 +1,7 @@
 from harness4codex.cli import run
 from harness4codex.memory import HarnessMemoryStore
-from harness4codex.state import HarnessStateStore
+from harness4codex.classifier import Classification
+from harness4codex.state import HarnessStateStore, store_for_payload
 
 
 def test_status_prints_state_workflow_and_memory_count(tmp_path, capsys):
@@ -19,6 +20,21 @@ def test_status_prints_state_workflow_and_memory_count(tmp_path, capsys):
     assert "status: idle" in output
     assert "workflow: " in output
     assert "memory records: 1" in output
+
+
+def test_status_prints_isolated_session_summary(tmp_path, capsys):
+    home = tmp_path / "home"
+    store_for_payload({"session_id": "session-a", "cwd": str(tmp_path)}, home).start_task(
+        Classification("C2", "feature", ["codex-spec-light"], [], False),
+        "implemente csv",
+    )
+
+    exit_code = run(["status", "--home", str(home), "--cwd", str(tmp_path)])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "sessions: 1" in output
+    assert "active sessions: 1" in output
 
 
 def test_workflow_show_prints_rendered_context(tmp_path, capsys):

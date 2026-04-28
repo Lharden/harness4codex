@@ -14,6 +14,7 @@ HARNESS4CODEX is a Codex-native workflow state machine. Treat hook context as ro
 - Do not claim completion until `verification-before-completion` has fresh evidence from the current turn.
 - If hook state and user instructions conflict, the newest user instruction wins; record the conflict in the final summary.
 - Do not rely on hooks as the only safety boundary. Apply normal Codex filesystem, git, and approval rules.
+- In Codex app multitask workflows, treat `Scope:` in hook context as the active local thread/worktree state. Do not carry pipeline state across scopes.
 
 ## Pipeline Map
 

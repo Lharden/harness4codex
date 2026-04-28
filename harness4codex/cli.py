@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Sequence
 
 from .memory import HarnessMemoryStore, MemoryConsolidator
-from .state import HarnessStateStore
+from .state import HarnessStateStore, list_session_states
 from .workflow import load_workflow
 
 
@@ -47,6 +47,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
     state = HarnessStateStore(args.home).load()
     workflow = load_workflow(args.cwd)
     memory = HarnessMemoryStore(args.home)
+    session_states = list_session_states(args.home)
+    active_sessions = [session for session in session_states if session.get("status") == "active"]
     print("Harness4Codex status")
     print(f"home: {memory.home}")
     print(f"status: {state.get('status')}")
@@ -55,6 +57,8 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print(f"verified: {state.get('verified')}")
     print(f"files touched: {len(state.get('files') or [])}")
     print(f"memory records: {memory.history_count()}")
+    print(f"sessions: {len(session_states)}")
+    print(f"active sessions: {len(active_sessions)}")
     if workflow:
         print(f"workflow: {workflow.path}")
         commands = workflow.verification_commands
