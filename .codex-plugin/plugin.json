@@ -1,0 +1,38 @@
+{
+  "name": "harness4codex",
+  "version": "0.1.0",
+  "description": "Codex-native workflow harness with hooks, state, skills, and git guardrails.",
+  "author": {
+    "name": "Lharden"
+  },
+  "homepage": "https://github.com/Lharden/harness4codex",
+  "repository": "https://github.com/Lharden/harness4codex",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "hooks",
+    "workflow",
+    "sdd",
+    "guardrails"
+  ],
+  "skills": "./skills/",
+  "hooks": "./hooks.json",
+  "interface": {
+    "displayName": "Harness4Codex",
+    "shortDescription": "Workflow orchestration and guardrails for Codex",
+    "longDescription": "Harness4Codex adds a Codex-native state machine, lifecycle hook handlers, workflow skill guidance, and git safety guardrails for implementation, debugging, review, and verification tasks.",
+    "developerName": "Lharden",
+    "category": "Coding",
+    "capabilities": [
+      "Read",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/Lharden/harness4codex",
+    "defaultPrompt": [
+      "Use Harness4Codex for this implementation",
+      "Resume the active Harness4Codex workflow"
+    ],
+    "brandColor": "#0F766E",
+    "screenshots": []
+  }
+}
