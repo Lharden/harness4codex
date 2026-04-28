@@ -9,7 +9,9 @@ from typing import Any
 
 from .classifier import classify_prompt
 from .git_guard import inspect_command
+from .memory import HarnessMemoryStore
 from .state import HarnessStateStore
+from .workflow import load_workflow
 
 
 VERIFICATION_PATTERNS = [
@@ -150,6 +152,31 @@ def _classification_context(state: dict[str, Any]) -> str:
     return base
 
 
+def _cwd_from_payload(payload: dict[str, Any]) -> Path:
+    cwd = payload.get("cwd") or payload.get("working_directory") or payload.get("workingDirectory")
+    if cwd:
+        return Path(str(cwd))
+    return Path.cwd()
+
+
+def _append_workflow_context(context: str, payload: dict[str, Any]) -> str:
+    try:
+        workflow = load_workflow(_cwd_from_payload(payload))
+    except Exception:
+        return context
+    if workflow is None:
+        return context
+    return context + "\n\n" + workflow.render_for_prompt()
+
+
+def _record_memory(store: HarnessStateStore, event: str, text: str, metadata: dict[str, Any]) -> None:
+    try:
+        HarnessMemoryStore(store.home).record_history(event, text, metadata)
+    except Exception:
+        # Hooks must not fail task execution because auxiliary memory storage failed.
+        store.log_error(f"memory record failed for {event}")
+
+
 def _handle_session_start(event: str, store: HarnessStateStore) -> str:
     state = store.load()
     if state.get("status") in {"active", "verified"} and state.get("pipeline"):
@@ -163,16 +190,19 @@ def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessState
     current = store.load()
     if current.get("status") == "active" and not classification.is_task_switch:
         store.log_event(event, {"continued": current.get("task_id"), "prompt": prompt})
-        return _context_output(event, _task_context(current, "Continue o pipeline ativo."))
+        _record_memory(store, event, prompt, {"continued": current.get("task_id")})
+        return _context_output(event, _append_workflow_context(_task_context(current, "Continue o pipeline ativo."), payload))
     state = store.start_task(classification, prompt)
     store.log_event(event, {"classification": state.get("classification"), "prompt": prompt})
-    return _context_output(event, _classification_context(state))
+    _record_memory(store, event, prompt, {"classification": state.get("classification")})
+    return _context_output(event, _append_workflow_context(_classification_context(state), payload))
 
 
 def _handle_pre_tool(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
     command = _command_from_payload(payload)
     decision = inspect_command(command)
     store.log_event(event, {"tool": payload.get("tool_name") or payload.get("toolName"), "command": command})
+    _record_memory(store, event, command, {"tool": payload.get("tool_name") or payload.get("toolName")})
     if decision.blocked:
         return _deny_pretool(event, f"HARNESS4CODEX git guard: {decision.reason}")
     if decision.warning:
@@ -184,6 +214,7 @@ def _handle_permission(payload: dict[str, Any], store: HarnessStateStore) -> str
     command = _command_from_payload(payload)
     decision = inspect_command(command)
     store.log_event("PermissionRequest", {"command": command})
+    _record_memory(store, "PermissionRequest", command, {})
     if decision.blocked:
         return _deny_permission(f"HARNESS4CODEX git guard: {decision.reason}")
     if decision.warning:
@@ -205,6 +236,7 @@ def _handle_post_tool(event: str, payload: dict[str, Any], store: HarnessStateSt
     if verification_seen and exit_code == 0:
         state = store.mark_verified(command)
     store.log_event(event, {"command": command, "files": files, "exit_code": exit_code})
+    _record_memory(store, event, command or ", ".join(files), {"files": files, "exit_code": exit_code})
     if promoted:
         return _context_output(
             event,

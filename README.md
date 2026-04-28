@@ -11,6 +11,10 @@ It uses Codex hooks, a local state machine, a workflow skill, and git guardrails
 - Context injection that asks Codex to use `codex-harness-workflow`.
 - Git guardrails for `git push --force`, `git reset --hard`, `git clean -f`, and similar commands.
 - Verification gate on `Stop` for active implementation pipelines.
+- Repo-local `WORKFLOW.md` discovery for versioned workflow policy.
+- SQLite-backed searchable memory and consolidation proposals under `~/.codex/harness`.
+- CLI commands for status, workflow inspection, and memory search/consolidation.
+- Deterministic workspace primitives for future Symphony-style issue orchestration.
 - Idempotent installer for `~/.codex/config.toml`, `~/.codex/hooks.json`, the plugin folder, and the direct skill folder.
 
 ## Install
@@ -44,6 +48,35 @@ python hooks/codex_harness_hook.py
 ```
 
 For the hook script, Codex normally sends JSON on stdin. Unit tests cover the supported event payloads directly.
+
+## Workflow Policy
+
+Add a `WORKFLOW.md` at a repo root to give Codex versioned local policy:
+
+```markdown
+---
+project: Example
+verification:
+  commands:
+    - python -m pytest
+handoff_state: Human Review
+---
+# Workflow
+Make small changes, run the listed verification, and attach proof before review.
+```
+
+Harness4Codex injects a compact rendering of this file into `UserPromptSubmit` hook context.
+
+## CLI
+
+```powershell
+python -m harness4codex status
+python -m harness4codex workflow show
+python -m harness4codex memory search verification
+python -m harness4codex memory consolidate
+```
+
+`memory consolidate` creates auditable proposals in SQLite. It does not edit skills, hooks, workflow files, or git state.
 
 ## Notes
 

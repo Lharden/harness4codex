@@ -23,6 +23,30 @@ def test_user_prompt_submit_injects_harness_context(tmp_path):
     assert "codex-harness-workflow" in context
 
 
+def test_user_prompt_submit_includes_repo_workflow_context(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "WORKFLOW.md").write_text(
+        "---\nverification:\n  commands:\n    - pytest -q\nhandoff_state: Human Review\n---\n"
+        "# Workflow\nAttach proof before review.\n",
+        encoding="utf-8",
+    )
+
+    output = handle_payload(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "Implemente exportacao CSV.",
+            "cwd": str(repo),
+        },
+        harness_home=tmp_path / "home",
+    )
+
+    context = _decode(output)["hookSpecificOutput"]["additionalContext"]
+    assert "Repo WORKFLOW.md" in context
+    assert "pytest -q" in context
+    assert "Human Review" in context
+
+
 def test_session_start_resumes_active_pipeline(tmp_path):
     handle_payload(
         {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija bug de login."},

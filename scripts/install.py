@@ -91,6 +91,7 @@ def merge_hooks_config(existing: dict[str, Any], new: dict[str, Any], hook_path:
 def _ignore_copy(dir_path: str, names: list[str]) -> set[str]:
     ignored = {".git", ".pytest_cache", ".pytest_cache_codex", ".pytest_tmp_codex", "__pycache__"}
     ignored.update(name for name in names if name.startswith("pytest-cache-files-"))
+    ignored.update(name for name in names if name.startswith(".codex_ops_validation"))
     return ignored.intersection(names)
 
 
