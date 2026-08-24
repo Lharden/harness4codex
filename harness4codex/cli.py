@@ -1,9 +1,18 @@
 from __future__ import annotations
 
 import argparse
+import json
+import os
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
+from .diagnostics import run_doctor
+from .harness_lite_adapter import (
+    HarnessLiteClient,
+    build_task_envelope,
+    execution_is_enabled,
+    git_base_revision,
+)
 from .memory import HarnessMemoryStore, MemoryConsolidator
 from .state import HarnessStateStore, list_session_states
 from .workflow import load_workflow
@@ -39,6 +48,23 @@ def _build_parser() -> argparse.ArgumentParser:
     memory_consolidate = memory_sub.add_parser("consolidate", help="Create auditable memory proposals.")
     memory_consolidate.add_argument("--home", type=Path, default=None)
     memory_consolidate.set_defaults(func=_cmd_memory_consolidate)
+
+    doctor = subparsers.add_parser("doctor", help="Check Codex workflow and MCP readiness.")
+    doctor.add_argument("--home", type=Path, default=Path.home() / ".codex")
+    doctor.add_argument("--json", action="store_true")
+    doctor.set_defaults(func=_cmd_doctor)
+
+    lite = subparsers.add_parser("lite", help="Preview or explicitly submit work to Harness Lite.")
+    lite_sub = lite.add_subparsers(dest="lite_command", required=True)
+    for verb, handler in (("preview", _cmd_lite_preview), ("submit", _cmd_lite_submit)):
+        command = lite_sub.add_parser(verb)
+        command.add_argument("objective")
+        command.add_argument("--level", choices=["C1", "C2", "C3", "CR", "DOCS"], required=True)
+        command.add_argument("--cwd", type=Path, default=Path.cwd())
+        command.add_argument("--session-id", default="harness4codex-cli")
+        command.add_argument("--acceptance", action="append", default=[])
+        command.add_argument("--allowed-command", action="append", default=[])
+        command.set_defaults(func=handler)
 
     return parser
 
@@ -99,3 +125,89 @@ def _cmd_memory_consolidate(args: argparse.Namespace) -> int:
     for proposal in report.proposals:
         print(f"- {proposal['key']}: {proposal['value']}")
     return 0
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    report = run_doctor(args.home)
+    if args.json:
+        print(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    else:
+        print(f"Harness4Codex doctor: {'ready' if report.ok else 'not ready'}")
+        for check in report.checks:
+            print(f"[{check.status}] {check.code}: {check.message}")
+    return 0 if report.ok else 1
+
+
+def _lite_envelope(args: argparse.Namespace, *, max_cost_usd: float) -> dict | None:
+    revision = git_base_revision(args.cwd)
+    if revision is None:
+        print("Harness Lite: the workspace must have a Git HEAD revision.")
+        return None
+    try:
+        runtime = int(os.environ.get("HARNESS4CODEX_LITE_MAX_RUNTIME_SEC", "300"))
+    except ValueError:
+        runtime = 300
+    return build_task_envelope(
+        level=args.level,
+        objective=args.objective,
+        workspace_path=str(args.cwd),
+        base_revision=revision,
+        session_id=args.session_id,
+        acceptance_criteria=args.acceptance or None,
+        allowed_commands=args.allowed_command,
+        requested_profile=os.environ.get("HARNESS4CODEX_LITE_PROFILE", "auto"),
+        data_class=os.environ.get("HARNESS4CODEX_LITE_DATA_CLASS", "internal"),
+        max_cost_usd=max_cost_usd,
+        max_runtime_sec=max(runtime, 1),
+    )
+
+
+def _lite_client() -> HarnessLiteClient | None:
+    client = HarnessLiteClient.from_env()
+    if client is None:
+        print("Harness Lite: HARNESS_CONTROL_TOKEN is not configured.")
+    return client
+
+
+def _report_lite(result) -> int:
+    print(
+        json.dumps(
+            {
+                "ok": result.ok,
+                "status": result.status,
+                "result": result.result,
+                "code": result.code,
+                "message": result.message,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0 if result.ok else 1
+
+
+def _cmd_lite_preview(args: argparse.Namespace) -> int:
+    client = _lite_client()
+    if client is None:
+        return 2
+    try:
+        budget = float(os.environ.get("HARNESS4CODEX_LITE_PREVIEW_MAX_COST_USD", "0"))
+    except ValueError:
+        budget = 0.0
+    envelope = _lite_envelope(args, max_cost_usd=max(budget, 0.0))
+    return 2 if envelope is None else _report_lite(client.preview(envelope))
+
+
+def _cmd_lite_submit(args: argparse.Namespace) -> int:
+    if not execution_is_enabled():
+        print(
+            "Harness Lite execution needs explicit opt-in: set HARNESS4CODEX_LITE_EXECUTE=true "
+            "and a positive HARNESS4CODEX_LITE_MAX_COST_USD."
+        )
+        return 2
+    client = _lite_client()
+    if client is None:
+        return 2
+    budget = float(os.environ["HARNESS4CODEX_LITE_MAX_COST_USD"])
+    envelope = _lite_envelope(args, max_cost_usd=budget)
+    return 2 if envelope is None else _report_lite(client.submit(envelope))

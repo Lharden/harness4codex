@@ -1,6 +1,8 @@
 import json
 
-from harness4codex.hook import handle_payload
+from harness4codex.hook import _decode_payload, _extract_exit_code, handle_payload
+from harness4codex.memory import HarnessMemoryStore
+from harness4codex.state import HarnessStateStore
 
 
 def _decode(output: str) -> dict:
@@ -120,6 +122,12 @@ def test_pre_tool_use_denies_dangerous_git(tmp_path):
 
     data = _decode(output)
     assert data["hookSpecificOutput"]["permissionDecision"] == "deny"
+    assert set(data) == {"systemMessage", "hookSpecificOutput"}
+    assert set(data["hookSpecificOutput"]) == {
+        "hookEventName",
+        "permissionDecision",
+        "permissionDecisionReason",
+    }
 
 
 def test_permission_request_denies_dangerous_git(tmp_path):
@@ -134,6 +142,23 @@ def test_permission_request_denies_dangerous_git(tmp_path):
 
     data = _decode(output)
     assert data["hookSpecificOutput"]["decision"]["behavior"] == "deny"
+    assert set(data) == {"systemMessage", "hookSpecificOutput"}
+    assert set(data["hookSpecificOutput"]) == {"hookEventName", "decision"}
+
+
+def test_permission_request_warning_uses_only_a_generic_system_message(tmp_path):
+    output = handle_payload(
+        {
+            "hook_event_name": "PermissionRequest",
+            "tool_name": "Bash",
+            "tool_input": {"command": "git push origin feature"},
+        },
+        harness_home=tmp_path,
+    )
+
+    data = _decode(output)
+    assert set(data) == {"systemMessage"}
+    assert "confirm" in data["systemMessage"].lower()
 
 
 def test_post_tool_use_promotes_after_multiple_files(tmp_path):
@@ -168,6 +193,18 @@ def test_stop_blocks_unverified_active_pipeline_once(tmp_path):
     assert "verification" in data["reason"].lower()
 
 
+def test_stop_keeps_blocking_until_fresh_verification(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
+        harness_home=tmp_path,
+    )
+
+    first = _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))
+    second = _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))
+
+    assert first["decision"] == second["decision"] == "block"
+
+
 def test_stop_block_output_uses_codex_stop_schema_only(tmp_path):
     handle_payload(
         {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
@@ -177,7 +214,7 @@ def test_stop_block_output_uses_codex_stop_schema_only(tmp_path):
     output = handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path)
 
     data = _decode(output)
-    assert set(data) <= {"continue", "decision", "reason", "stopReason", "systemMessage", "suppressOutput"}
+    assert set(data) == {"decision", "reason"}
     assert data["decision"] == "block"
     assert data["reason"].strip()
     assert "hookSpecificOutput" not in data
@@ -187,3 +224,98 @@ def test_stop_hook_active_does_not_loop(tmp_path):
     output = handle_payload({"hook_event_name": "Stop", "stop_hook_active": True}, harness_home=tmp_path)
 
     assert output == ""
+
+
+def test_extract_exit_code_from_current_nested_tool_response():
+    payload = {
+        "tool_response": {
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Script completed\nProcess exited with code 0\nFinal output:\n75 passed",
+                }
+            ]
+        }
+    }
+
+    assert _extract_exit_code(payload) == 0
+
+
+def test_successful_verification_is_recorded_from_nested_response(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija o bug."},
+        harness_home=tmp_path,
+    )
+
+    output = handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"cmd": "python -m pytest -q"},
+            "tool_response": {
+                "content": [{"type": "text", "text": "Process exited with code 0\n75 passed"}]
+            },
+        },
+        harness_home=tmp_path,
+    )
+
+    assert output == ""
+    assert HarnessStateStore(tmp_path).load()["verified"] is True
+
+
+def test_write_after_verification_invalidates_the_gate(tmp_path):
+    store = HarnessStateStore(tmp_path)
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija o bug."},
+        harness_home=tmp_path,
+    )
+    store.mark_verified("python -m pytest -q")
+
+    handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "apply_patch",
+            "tool_input": {"patch": "*** Update File: app.py\n"},
+        },
+        harness_home=tmp_path,
+    )
+
+    state = store.load()
+    assert state["verified"] is False
+    assert state["status"] == "active"
+
+
+def test_utf8_hook_input_is_decoded_independently_of_windows_stdio():
+    payload = _decode_payload(
+        '{"hook_event_name":"UserPromptSubmit","prompt":"correção e ciência"}'.encode()
+    )
+
+    assert payload["prompt"] == "correção e ciência"
+
+
+def test_session_history_is_recorded_in_the_shared_memory_store(tmp_path):
+    handle_payload(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "session-a",
+            "cwd": str(tmp_path),
+            "prompt": "Corrija o bug de autenticação.",
+        },
+        harness_home=tmp_path,
+    )
+
+    assert HarnessMemoryStore(tmp_path).history_count() == 1
+
+
+def test_science_evidence_intent_is_added_to_prompt_context(tmp_path):
+    output = handle_payload(
+        {
+            "hook_event_name": "UserPromptSubmit",
+            "prompt": "Analise as evidências científicas e claims do corpus.",
+        },
+        harness_home=tmp_path,
+    )
+
+    context = _decode(output)["hookSpecificOutput"]["additionalContext"]
+    assert "science_harness" in context
+    assert "read-only" in context

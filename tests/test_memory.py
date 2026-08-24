@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 
 from harness4codex.memory import HarnessMemoryStore, MemoryConsolidator
 
@@ -73,3 +74,15 @@ def test_consolidator_reads_session_event_logs(tmp_path):
 
     assert report.events_read == 1
     assert [proposal["key"] for proposal in proposals] == ["workflow-verification-reminder"]
+
+
+def test_wal_memory_store_accepts_concurrent_hook_writers(tmp_path):
+    HarnessMemoryStore(tmp_path)
+
+    def write(index):
+        HarnessMemoryStore(tmp_path).record_history("Concurrent", f"event-{index}", {"index": index})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(write, range(64)))
+
+    assert HarnessMemoryStore(tmp_path).history_count() == 64

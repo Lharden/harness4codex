@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import sys
 import traceback
 from pathlib import Path
@@ -9,10 +10,11 @@ from typing import Any
 
 from .classifier import classify_prompt
 from .git_guard import inspect_command
+from .harness_lite_adapter import preview_for_prompt
 from .memory import HarnessMemoryStore
+from .science_adapter import science_context
 from .state import HarnessStateStore, store_for_payload
 from .workflow import load_workflow
-
 
 VERIFICATION_PATTERNS = [
     r"\bpytest\b",
@@ -31,18 +33,20 @@ def _event_name(payload: dict[str, Any]) -> str:
 
 
 def _json(data: dict[str, Any]) -> str:
-    return json.dumps(data, ensure_ascii=True, sort_keys=True)
+    return json.dumps(data, ensure_ascii=False, sort_keys=True)
 
 
 def _context_output(event: str, context: str) -> str:
     return _json({"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}})
 
 
+def _system_message(message: str) -> str:
+    return _json({"systemMessage": message})
+
+
 def _deny_pretool(event: str, reason: str) -> str:
     return _json(
         {
-            "continue": False,
-            "stopReason": reason,
             "systemMessage": reason,
             "hookSpecificOutput": {
                 "hookEventName": event,
@@ -56,13 +60,9 @@ def _deny_pretool(event: str, reason: str) -> str:
 def _deny_permission(reason: str) -> str:
     return _json(
         {
-            "continue": False,
-            "stopReason": reason,
             "systemMessage": reason,
             "hookSpecificOutput": {
                 "hookEventName": "PermissionRequest",
-                "permissionDecision": "deny",
-                "permissionDecisionReason": reason,
                 "decision": {"behavior": "deny", "message": reason},
             },
         }
@@ -70,14 +70,15 @@ def _deny_permission(reason: str) -> str:
 
 
 def _block_stop(reason: str) -> str:
-    return _json(
-        {
-            "continue": False,
-            "decision": "block",
-            "reason": reason,
-            "stopReason": reason,
-        }
-    )
+    return _json({"decision": "block", "reason": reason})
+
+
+def _decode_payload(raw: bytes | str) -> dict[str, Any]:
+    text = raw.decode("utf-8-sig") if isinstance(raw, bytes) else raw
+    value = json.loads(text)
+    if not isinstance(value, dict):
+        raise TypeError("hook input must be a JSON object")
+    return value
 
 
 def _tool_input(payload: dict[str, Any]) -> dict[str, Any]:
@@ -101,7 +102,8 @@ def _extract_files(payload: dict[str, Any]) -> list[str]:
         if value:
             files.append(str(value))
     command = _command_from_payload(payload)
-    files.extend(match.strip() for match in PATCH_FILE_PATTERN.findall(command))
+    patch = tool_input.get("patch") or tool_input.get("input") or ""
+    files.extend(match.strip() for match in PATCH_FILE_PATTERN.findall(command + "\n" + str(patch)))
     return list(dict.fromkeys(files))
 
 
@@ -115,15 +117,40 @@ def _extract_exit_code(payload: dict[str, Any]) -> int | None:
         if isinstance(value, int):
             return value
     response = payload.get("tool_response") or payload.get("toolResponse") or payload.get("output") or ""
-    if isinstance(response, dict):
-        for key in ("exit_code", "exitCode", "status"):
-            value = response.get(key)
-            if isinstance(value, int):
-                return value
-        response = json.dumps(response)
-    match = re.search(r"Exit code:\s*(\d+)", str(response), re.IGNORECASE)
-    if match:
-        return int(match.group(1))
+
+    def walk(value: Any) -> int | None:
+        if isinstance(value, dict):
+            for key in ("exit_code", "exitCode"):
+                code = value.get(key)
+                if isinstance(code, int) and not isinstance(code, bool):
+                    return code
+            for nested in value.values():
+                code = walk(nested)
+                if code is not None:
+                    return code
+            return None
+        if isinstance(value, (list, tuple)):
+            for nested in value:
+                code = walk(nested)
+                if code is not None:
+                    return code
+            return None
+        if isinstance(value, str):
+            patterns = (
+                r"Process exited with code\s+(-?\d+)",
+                r"Exit code:\s*(-?\d+)",
+                r"[\"']?exit_code[\"']?\s*[:=]\s*(-?\d+)",
+                r"\bexit=(-?\d+)\b",
+            )
+            for pattern in patterns:
+                match = re.search(pattern, value, re.IGNORECASE)
+                if match:
+                    return int(match.group(1))
+        return None
+
+    nested_code = walk(response)
+    if nested_code is not None:
+        return nested_code
     return None
 
 
@@ -139,9 +166,12 @@ def _task_context(state: dict[str, Any], heading: str) -> str:
     lines.extend(
         [
             f"Level: {state.get('level')} / {state.get('kind')}",
-            f"Skill: codex-harness-workflow",
+            "Skill: codex-harness-workflow",
             f"Pipeline: {', '.join(pipeline) if pipeline else 'none'}",
-            "Follow the listed skills in order. Do not claim completion until verification-before-completion has fresh evidence.",
+            (
+                "Follow the listed skills in order. Do not claim completion until "
+                "superpowers:verification-before-completion has fresh evidence."
+            ),
         ]
     )
     return "\n".join(lines)
@@ -166,19 +196,53 @@ def _cwd_from_payload(payload: dict[str, Any]) -> Path:
 def _append_workflow_context(context: str, payload: dict[str, Any]) -> str:
     try:
         workflow = load_workflow(_cwd_from_payload(payload))
-    except Exception:
+    except (OSError, UnicodeError, ValueError):
         return context
     if workflow is None:
         return context
     return context + "\n\n" + workflow.render_for_prompt()
 
 
+def _append_science_context(context: str, prompt: str) -> str:
+    evidence = science_context(prompt)
+    return context + ("\n\n" + evidence if evidence else "")
+
+
+def _append_lite_preview(
+    context: str,
+    classification_level: str,
+    prompt: str,
+    payload: dict[str, Any],
+    store: HarnessStateStore,
+) -> str:
+    result = preview_for_prompt(
+        level=classification_level,
+        objective=prompt,
+        workspace_path=_cwd_from_payload(payload),
+        session_id=str(payload.get("session_id") or payload.get("sessionId") or store.scope or "local"),
+    )
+    if result is None:
+        return context
+    if result.ok:
+        route = result.result or {}
+        summary = (
+            "HARNESS LITE preview (advisory): "
+            f"eligible={route.get('eligible')}, risk={route.get('riskTier')}, "
+            f"runner={route.get('runner')}, model={route.get('modelAlias')}."
+        )
+        store.log_event("HarnessLitePreview", {"ok": True, "route": route})
+    else:
+        summary = f"HARNESS LITE preview unavailable: {result.code or 'CONTROL_ERROR'}."
+        store.log_event("HarnessLitePreview", {"ok": False, "code": result.code, "status": result.status})
+    return context + "\n\n" + summary
+
+
 def _record_memory(store: HarnessStateStore, event: str, text: str, metadata: dict[str, Any]) -> None:
     try:
-        HarnessMemoryStore(store.home).record_history(event, text, metadata)
-    except Exception:
+        HarnessMemoryStore(store.memory_home).record_history(event, text, metadata)
+    except (OSError, sqlite3.Error, TypeError, ValueError) as exc:
         # Hooks must not fail task execution because auxiliary memory storage failed.
-        store.log_error(f"memory record failed for {event}")
+        store.log_error(f"memory record failed for {event}: {type(exc).__name__}: {exc}")
 
 
 def _handle_session_start(event: str, store: HarnessStateStore) -> str:
@@ -195,11 +259,15 @@ def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessState
     if current.get("status") == "active" and not classification.is_task_switch:
         store.log_event(event, {"continued": current.get("task_id"), "prompt": prompt})
         _record_memory(store, event, prompt, {"continued": current.get("task_id")})
-        return _context_output(event, _append_workflow_context(_task_context(current, "Continue o pipeline ativo."), payload))
+        context = _append_workflow_context(_task_context(current, "Continue o pipeline ativo."), payload)
+        return _context_output(event, _append_science_context(context, prompt))
     state = store.start_task(classification, prompt)
     store.log_event(event, {"classification": state.get("classification"), "prompt": prompt})
     _record_memory(store, event, prompt, {"classification": state.get("classification")})
-    return _context_output(event, _append_workflow_context(_classification_context(state), payload))
+    context = _append_workflow_context(_classification_context(state), payload)
+    context = _append_science_context(context, prompt)
+    context = _append_lite_preview(context, classification.level, prompt, payload, store)
+    return _context_output(event, context)
 
 
 def _handle_pre_tool(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
@@ -222,7 +290,7 @@ def _handle_permission(payload: dict[str, Any], store: HarnessStateStore) -> str
     if decision.blocked:
         return _deny_permission(f"HARNESS4CODEX git guard: {decision.reason}")
     if decision.warning:
-        return _context_output("PermissionRequest", f"HARNESS4CODEX warning: {decision.warning}")
+        return _system_message(f"HARNESS4CODEX warning: {decision.warning}")
     return ""
 
 
@@ -259,14 +327,13 @@ def _handle_stop(payload: dict[str, Any], store: HarnessStateStore) -> str:
         return ""
     state = store.load()
     if state.get("status") == "active" and state.get("pipeline") and not state.get("verified"):
-        if int(state.get("stop_continuations") or 0) < 1:
-            store.increment_stop_continuations()
-            reason = (
-                "HARNESS4CODEX verification gate: continue with codex-harness-workflow and run "
-                "verification-before-completion before the final response."
-            )
-            store.log_event("Stop", {"blocked": True, "reason": reason})
-            return _block_stop(reason)
+        store.increment_stop_continuations()
+        reason = (
+            "HARNESS4CODEX verification gate: continue with codex-harness-workflow and run "
+            "superpowers:verification-before-completion before the final response."
+        )
+        store.log_event("Stop", {"blocked": True, "reason": reason})
+        return _block_stop(reason)
     store.log_event("Stop", {"blocked": False, "status": state.get("status")})
     return ""
 
@@ -290,21 +357,38 @@ def handle_payload(payload: dict[str, Any], harness_home: str | Path | None = No
 
 
 def _error_output(message: str) -> str:
-    return _json({"continue": True, "systemMessage": f"HARNESS4CODEX hook error: {message}"})
+    return _system_message(f"HARNESS4CODEX hook error: {message}")
+
+
+def _emit(output: str) -> None:
+    encoded = (output + "\n").encode("utf-8")
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is not None:
+        buffer.write(encoded)
+        buffer.flush()
+    else:  # pragma: no cover - StringIO and embedded runtimes
+        sys.stdout.write(encoded.decode("utf-8"))
+        sys.stdout.flush()
+
+
+def _log_boundary_error() -> None:
+    try:
+        HarnessStateStore().log_error(traceback.format_exc())
+    except Exception:  # noqa: BLE001 - the hook boundary must remain fail-open
+        return
 
 
 def main() -> int:
-    raw = sys.stdin.read()
+    raw = sys.stdin.buffer.read()
     if not raw.strip():
         return 0
     try:
-        payload = json.loads(raw)
+        payload = _decode_payload(raw)
         output = handle_payload(payload)
         if output:
-            print(output)
+            _emit(output)
         return 0
-    except Exception as exc:  # pragma: no cover - defensive hook boundary
-        store = HarnessStateStore()
-        store.log_error(traceback.format_exc())
-        print(_error_output(str(exc)))
+    except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive hook boundary
+        _log_boundary_error()
+        _emit(_error_output(str(exc)))
         return 0

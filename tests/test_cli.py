@@ -1,6 +1,6 @@
+from harness4codex.classifier import Classification
 from harness4codex.cli import run
 from harness4codex.memory import HarnessMemoryStore
-from harness4codex.classifier import Classification
 from harness4codex.state import HarnessStateStore, store_for_payload
 
 
@@ -76,3 +76,25 @@ def test_memory_consolidate_prints_proposals(tmp_path, capsys):
     assert exit_code == 0
     assert "events read: 1" in output
     assert "workflow-verification-reminder" in output
+
+
+def test_doctor_json_prints_machine_readiness(tmp_path, capsys):
+    (tmp_path / "config.toml").write_text("[features]\nhooks = false\n", encoding="utf-8")
+
+    exit_code = run(["doctor", "--home", str(tmp_path), "--json"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 1
+    assert '"ok": false' in output
+    assert "HOOKS_DISABLED" in output
+
+
+def test_lite_submit_refuses_without_explicit_execution_opt_in(tmp_path, capsys, monkeypatch):
+    monkeypatch.delenv("HARNESS4CODEX_LITE_EXECUTE", raising=False)
+    monkeypatch.delenv("HARNESS4CODEX_LITE_MAX_COST_USD", raising=False)
+
+    exit_code = run(["lite", "submit", "Implementar CSV", "--cwd", str(tmp_path), "--level", "C2"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 2
+    assert "opt-in" in output

@@ -1,130 +1,156 @@
+import pytest
+
+import harness4codex.harness_lite_adapter as adapter
 from harness4codex.harness_lite_adapter import (
-    EvidenceBundle,
-    bundle_is_acceptable,
-    build_supervisor_request,
-    checkpoint_points,
-    is_replay,
+    HarnessLiteClient,
+    build_task_envelope,
+    evidence_bundle_is_acceptable,
+    execution_is_enabled,
+    lite_route_for,
     project_fingerprint_for,
     reaches_the_plane,
-    to_wire,
 )
 
-"""Conformance suite for the thin harness-lite adapter.
 
-Ported from harness-lite core/src/control/adapter-contracts.test.ts. The
-properties are the ones that keep two adapters from producing two request
-shapes the plane would then have to accept both of.
-"""
-
-FINGERPRINT = "sha256:" + "a" * 64
-
-
-def _request(**overrides):
-    inputs = {
-        "level": "C2",
-        "stage": "execute",
-        "spec_text": "a spec",
-        "plan_text": "a plan",
-        "project_fingerprint": FINGERPRINT,
-        "session_id": "S-1",
-        "requested_alias": "local-fast",
-    }
-    inputs.update(overrides)
-    return build_supervisor_request(**inputs)
-
-
-def test_c0_never_reaches_the_plane():
-    # Submitting one would pay for a round trip to be told what the supervisor
-    # already knew.
+def test_c0_stays_local_and_all_work_levels_can_be_previewed():
     assert reaches_the_plane("C0") is False
-    assert reaches_the_plane("C1") is True
-    assert reaches_the_plane("C2") is True
+    for level in ("C1", "C2", "C3", "CR", "DOCS"):
+        assert reaches_the_plane(level) is True
 
 
-def test_plan_is_hashed_and_an_absent_plan_is_none():
-    assert _request().plan_sha256.startswith("sha256:")
-    # A zero hash reads as "a plan whose content is empty", which is a
-    # different and false claim.
-    assert _request(plan_text=None).plan_sha256 is None
+def test_obsolete_supervisor_wire_projection_is_not_exported():
+    assert not hasattr(adapter, "to_wire")
+    assert not hasattr(adapter, "build_supervisor_request")
 
 
-def test_the_same_plan_hashes_the_same_and_a_different_one_does_not():
-    assert _request().plan_sha256 == _request().plan_sha256
-    assert _request(plan_text="outro").plan_sha256 != _request().plan_sha256
+def test_codex_levels_map_to_the_lite_contract_without_leaking_codex_levels():
+    assert lite_route_for("C0") == ("L0", "R0", "diagnose", "read-only")
+    assert lite_route_for("C1") == ("L1", "R1", "diagnose", "isolated-worktree")
+    assert lite_route_for("C2") == ("L2", "R2", "implement", "isolated-worktree")
+    assert lite_route_for("C3") == ("L2", "R3", "implement", "isolated-worktree")
+    assert lite_route_for("CR") == ("L1", "R1", "review", "read-only")
+    assert lite_route_for("DOCS") == ("L1", "R0", "verify", "read-only")
 
 
-def test_neither_spec_nor_plan_text_travels():
-    wire = str(to_wire(_request()))
-    # The plane gets a name for the plan, not the plan. What a document says
-    # must never change what is executed.
-    assert "a spec" not in wire
-    assert "a plan" not in wire
+def test_preview_envelope_matches_harness_lite_task_envelope_v1():
+    envelope = build_task_envelope(
+        level="C2",
+        objective="Implementar exportação CSV",
+        workspace_path=r"C:\repo",
+        base_revision="a" * 40,
+        session_id="S-1",
+    )
+
+    assert set(envelope) == {
+        "schemaVersion",
+        "kind",
+        "objective",
+        "workspace",
+        "inputs",
+        "acceptance",
+        "execution",
+        "provenance",
+    }
+    assert envelope["schemaVersion"] == "1"
+    assert envelope["execution"]["riskHint"] == "R2"
+    assert envelope["execution"]["mutation"] == "isolated-worktree"
+    assert envelope["execution"]["allowedWriteGlobs"] == ["**"]
+    assert envelope["acceptance"]["criteria"]
+    assert "level" not in envelope
+    assert "stage" not in envelope
 
 
-def test_the_same_inputs_produce_the_same_key():
-    assert is_replay(_request(), _request()) is True
+def test_read_only_envelope_declares_no_write_globs():
+    envelope = build_task_envelope(
+        level="CR",
+        objective="Revisar mudança",
+        workspace_path=r"C:\repo",
+        base_revision="b" * 40,
+        session_id="S-2",
+    )
+
+    assert envelope["execution"]["mutation"] == "read-only"
+    assert envelope["execution"]["allowedWriteGlobs"] == []
 
 
-def test_a_different_plan_is_different_work():
-    assert is_replay(_request(), _request(plan_text="outro")) is False
+def test_same_envelope_inputs_produce_same_idempotency_key():
+    arguments = {
+        "level": "C2",
+        "objective": "Implementar CSV",
+        "workspace_path": r"C:\repo",
+        "base_revision": "d" * 40,
+        "session_id": "S-4",
+    }
+
+    assert build_task_envelope(**arguments)["provenance"] == build_task_envelope(**arguments)["provenance"]
 
 
-def test_a_different_project_is_different_work():
-    other = _request(project_fingerprint="sha256:" + "b" * 64)
-    # Two projects with the same prompt are two tasks.
-    assert is_replay(_request(), other) is False
+def test_lite_client_posts_authenticated_preview_without_putting_token_in_body():
+    seen = {}
+
+    class Response:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self):
+            return b'{"ok":true,"result":{"eligible":true,"riskTier":"R2"}}'
+
+    def opener(request, timeout):
+        seen["url"] = request.full_url
+        seen["authorization"] = request.headers["Authorization"]
+        seen["body"] = request.data.decode("utf-8")
+        seen["timeout"] = timeout
+        return Response()
+
+    client = HarnessLiteClient("http://127.0.0.1:8787", "secret-token", opener=opener)
+    result = client.preview(
+        build_task_envelope(
+            level="C2",
+            objective="Implementar CSV",
+            workspace_path=r"C:\repo",
+            base_revision="c" * 40,
+            session_id="S-3",
+        )
+    )
+
+    assert result.ok is True
+    assert seen["url"].endswith("/control/v1/routes/preview")
+    assert seen["authorization"] == "Bearer secret-token"
+    assert "secret-token" not in seen["body"]
+    assert seen["timeout"] <= 2.0
 
 
-def test_a_different_stage_is_different_work():
-    assert is_replay(_request(), _request(stage="verify")) is False
+def test_lite_client_refuses_to_send_the_control_token_off_loopback():
+    with pytest.raises(ValueError, match="loopback"):
+        HarnessLiteClient("https://example.com", "secret-token")
 
 
-def test_the_requested_alias_does_not_change_the_key():
-    # Policy may route it elsewhere and it is still the same task.
-    assert is_replay(_request(), _request(requested_alias="cloud-strong")) is True
+def test_lite_execution_requires_explicit_enable_and_positive_budget():
+    assert execution_is_enabled({}) is False
+    assert execution_is_enabled({"HARNESS4CODEX_LITE_EXECUTE": "true"}) is False
+    assert execution_is_enabled(
+        {"HARNESS4CODEX_LITE_EXECUTE": "true", "HARNESS4CODEX_LITE_MAX_COST_USD": "1.50"}
+    ) is True
 
 
-def test_the_key_is_stable_across_calls():
-    # A timestamp in the key would make every replay a new task.
-    assert _request().idempotency_key == _request().idempotency_key
+def test_evidence_bundle_requires_success_artifacts_and_criterion_evidence():
+    bundle = {
+        "status": "succeeded",
+        "artifacts": [{"uri": "file:///result"}],
+        "acceptance": [{"criterionId": "AC-1", "outcome": "pass", "evidence": [{"uri": "file:///proof"}]}],
+    }
+
+    assert evidence_bundle_is_acceptable(bundle) is True
+    assert evidence_bundle_is_acceptable({**bundle, "artifacts": []}) is False
+    assert evidence_bundle_is_acceptable({**bundle, "status": "failed"}) is False
+    assert evidence_bundle_is_acceptable({**bundle, "acceptance": [{"outcome": "pass", "evidence": []}]}) is False
 
 
-def test_premium_calls_are_bracketed_and_local_ones_are_not():
-    for stage in ("spec", "execute", "verify"):
-        # Before, so a crash mid-call does not lose that the call was about to
-        # happen; after, because the result is the expensive thing.
-        assert checkpoint_points(stage, True) == ("before", "after")
-        assert checkpoint_points(stage, False) == ()
-
-
-def test_classify_and_plan_do_not_bracket():
-    assert checkpoint_points("classify", True) == ()
-    assert checkpoint_points("plan", True) == ()
-
-
-def test_a_passed_bundle_with_artifacts_is_acceptable():
-    assert bundle_is_acceptable(EvidenceBundle("T-1", (("patch", "x"),), "passed")) is True
-
-
-def test_a_passed_bundle_with_no_artifacts_is_not():
-    # A pass that produced nothing is a verdict about nothing.
-    assert bundle_is_acceptable(EvidenceBundle("T-1", (), "passed")) is False
-
-
-def test_provisional_is_not_a_pass():
-    # A bundle that did not finish is an absent answer, and treating it as a
-    # wrong one is how a truncation becomes a verdict.
-    assert bundle_is_acceptable(EvidenceBundle("T-1", (("p", "x"),), "provisional")) is False
-
-
-def test_failed_is_not_a_pass():
-    assert bundle_is_acceptable(EvidenceBundle("T-1", (("p", "x"),), "failed")) is False
-
-
-def test_the_fingerprint_does_not_depend_on_order():
-    # Two orders of the same project are one project, and one task.
+def test_project_fingerprint_is_order_independent():
     assert project_fingerprint_for(["b", "a"]) == project_fingerprint_for(["a", "b"])
-
-
-def test_a_different_project_fingerprints_differently():
     assert project_fingerprint_for(["a"]) != project_fingerprint_for(["a", "b"])

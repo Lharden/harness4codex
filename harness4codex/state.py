@@ -1,14 +1,15 @@
 from __future__ import annotations
 
-from contextlib import contextmanager
-from dataclasses import asdict
-from datetime import datetime, timezone
 import hashlib
 import json
 import os
-from pathlib import Path
 import time
-from typing import Iterator
+import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
+from dataclasses import asdict
+from datetime import datetime, timezone
+from pathlib import Path
 
 from .classifier import BUG_PIPELINE, Classification
 
@@ -50,25 +51,38 @@ def default_state() -> dict:
 
 
 class HarnessStateStore:
-    def __init__(self, home: str | os.PathLike[str] | None = None, scope: str | None = None):
+    def __init__(
+        self,
+        home: str | os.PathLike[str] | None = None,
+        scope: str | None = None,
+        memory_home: str | os.PathLike[str] | None = None,
+    ):
         self.home = Path(home) if home is not None else default_harness_home()
         self.scope = scope
+        self.memory_home = Path(memory_home) if memory_home is not None else self.home
         self.state_path = self.home / "state.json"
         self.events_path = self.home / "events.jsonl"
         self.errors_path = self.home / "errors.log"
-        self.lock_path = self.home / "state.json.lockdir"
-        self.lock_owner_path = self.lock_path / "owner"
+        self.lock_path = self.home / "state.json.lock"
         self.home.mkdir(parents=True, exist_ok=True)
 
     @contextmanager
     def _lock(self, timeout: float = 2.0) -> Iterator[None]:
         deadline = time.monotonic() + timeout
-        owner_token = f"{os.getpid()} {time.time():.6f}"
+        owner_token = f"{os.getpid()} {uuid.uuid4().hex} {time.time():.6f}"
         while True:
             try:
-                self.lock_path.mkdir()
-                self.lock_owner_path.write_text(owner_token + "\n", encoding="utf-8")
+                descriptor = os.open(self.lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                try:
+                    os.write(descriptor, (owner_token + "\n").encode("utf-8"))
+                finally:
+                    os.close(descriptor)
                 break
+            except PermissionError as exc:
+                if time.monotonic() >= deadline:
+                    raise HarnessStateError(f"Timed out waiting for state lock: {self.lock_path}") from exc
+                time.sleep(0.01)
+                continue
             except FileExistsError:
                 if time.monotonic() >= deadline:
                     raise HarnessStateError(f"Timed out waiting for state lock: {self.lock_path}")
@@ -87,20 +101,23 @@ class HarnessStateStore:
 
     def _remove_stale_lock(self) -> None:
         try:
-            for child in self.lock_path.iterdir():
-                child.unlink(missing_ok=True)
-            self.lock_path.rmdir()
+            if self.lock_path.is_dir():
+                for child in self.lock_path.iterdir():
+                    child.unlink(missing_ok=True)
+                self.lock_path.rmdir()
+            else:
+                self.lock_path.unlink(missing_ok=True)
         except OSError:
             pass
 
     def _release_lock(self, owner_token: str) -> None:
         try:
-            if self.lock_owner_path.exists():
-                current_owner = self.lock_owner_path.read_text(encoding="utf-8").strip()
-                if current_owner and current_owner != owner_token:
-                    return
-            self.lock_owner_path.unlink(missing_ok=True)
-            self.lock_path.rmdir()
+            if not self.lock_path.is_file():
+                return
+            current_owner = self.lock_path.read_text(encoding="utf-8").strip()
+            if current_owner and current_owner != owner_token:
+                return
+            self.lock_path.unlink(missing_ok=True)
         except OSError:
             pass
 
@@ -164,6 +181,11 @@ class HarnessStateStore:
             files = state.setdefault("files", [])
             if normalized not in files:
                 files.append(normalized)
+            if state.get("verified"):
+                state["verified"] = False
+                state["last_verification"] = None
+                if state.get("pipeline"):
+                    state["status"] = "active"
             if state.get("level") == "C0" and len(files) >= 3:
                 state["level"] = "C1"
                 state["kind"] = "escalated-edit"
@@ -197,15 +219,18 @@ class HarnessStateStore:
 
     def log_event(self, event: str, payload: dict) -> None:
         record = {"at": utc_now(), "event": event, "payload": payload}
-        with self._lock():
-            with self.events_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, sort_keys=True) + "\n")
+        with self._lock(), self.events_path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
 
     def log_error(self, message: str) -> None:
         line = f"{utc_now()} {message}\n"
-        with self._lock():
+        try:
             with self.errors_path.open("a", encoding="utf-8") as handle:
                 handle.write(line)
+        except OSError:
+            # Error reporting is a last-resort path and must not recursively
+            # fail the hook whose original exception it was meant to preserve.
+            pass
 
 
 def store_for_payload(payload: dict, home: str | os.PathLike[str] | None = None) -> HarnessStateStore:
@@ -215,7 +240,7 @@ def store_for_payload(payload: dict, home: str | os.PathLike[str] | None = None)
         return HarnessStateStore(base_home)
     cwd = payload.get("cwd") or payload.get("working_directory") or payload.get("workingDirectory") or ""
     scope = state_scope_key(str(session_id), str(cwd))
-    return HarnessStateStore(base_home / "sessions" / scope, scope=scope)
+    return HarnessStateStore(base_home / "sessions" / scope, scope=scope, memory_home=base_home)
 
 
 def list_session_states(home: str | os.PathLike[str] | None = None) -> list[dict]:

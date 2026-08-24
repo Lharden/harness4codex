@@ -1,6 +1,7 @@
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from harness4codex.classifier import Classification
 from harness4codex.state import HarnessStateStore, store_for_payload
@@ -45,7 +46,7 @@ def test_recording_files_promotes_simple_question(tmp_path):
 
     assert state["level"] == "C1"
     assert state["status"] == "active"
-    assert "verification-before-completion" in state["pipeline"]
+    assert "superpowers:verification-before-completion" in state["pipeline"]
 
 
 def test_event_log_appends_json_lines(tmp_path):
@@ -91,10 +92,10 @@ def test_store_for_payload_without_session_uses_legacy_home(tmp_path):
 def test_state_lock_records_owner_and_releases_only_own_lock(tmp_path):
     store = HarnessStateStore(tmp_path)
 
-    with store._lock():  # noqa: SLF001 - validating lock primitive behavior
+    with store._lock():
         assert store.lock_path.exists()
-        assert store.lock_owner_path.exists()
-        owner_pid = store.lock_owner_path.read_text(encoding="utf-8").split()[0]
+        assert store.lock_path.is_file()
+        owner_pid = store.lock_path.read_text(encoding="utf-8").split()[0]
         assert owner_pid == str(os.getpid())
 
     assert not store.lock_path.exists()
@@ -102,13 +103,39 @@ def test_state_lock_records_owner_and_releases_only_own_lock(tmp_path):
 
 def test_state_lock_replaces_stale_lock(tmp_path):
     store = HarnessStateStore(tmp_path)
-    store.lock_path.mkdir(parents=True)
-    store.lock_owner_path.write_text("999999 0\n", encoding="utf-8")
+    store.lock_path.write_text("999999 0\n", encoding="utf-8")
     old = time.time() - 60
     os.utime(store.lock_path, (old, old))
 
     with store._lock(timeout=1.0):
-        owner_pid = store.lock_owner_path.read_text(encoding="utf-8").split()[0]
+        owner_pid = store.lock_path.read_text(encoding="utf-8").split()[0]
         assert owner_pid == str(os.getpid())
 
     assert not store.lock_path.exists()
+
+
+def test_recording_a_file_invalidates_previous_verification(tmp_path):
+    store = HarnessStateStore(tmp_path)
+    store.start_task(Classification("C1", "bug", ["verify"], [], False), "fix")
+    store.mark_verified("pytest -q")
+
+    state = store.record_file("app.py")
+
+    assert state["verified"] is False
+    assert state["status"] == "active"
+    assert state["last_verification"] is None
+
+
+def test_concurrent_event_writers_preserve_every_json_line(tmp_path):
+    HarnessStateStore(tmp_path).load()
+
+    def write(index):
+        HarnessStateStore(tmp_path).log_event("Concurrent", {"index": index})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(write, range(64)))
+
+    lines = (tmp_path / "events.jsonl").read_text(encoding="utf-8").splitlines()
+    records = [json.loads(line) for line in lines]
+    assert len(records) == 64
+    assert {record["payload"]["index"] for record in records} == set(range(64))

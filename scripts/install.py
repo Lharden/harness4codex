@@ -3,11 +3,11 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from pathlib import Path
 import re
 import shutil
+import uuid
+from pathlib import Path
 from typing import Any
-
 
 EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop"]
 
@@ -45,9 +45,9 @@ def build_hooks_config(hook_path: str | os.PathLike[str]) -> dict[str, Any]:
 
 
 def ensure_feature_flag(text: str) -> str:
-    lines = text.splitlines()
+    lines = [line for line in text.splitlines() if not re.match(r"\s*codex_hooks\s*=", line)]
     if not lines:
-        return "[features]\ncodex_hooks = true\n"
+        return "[features]\nhooks = true\n"
 
     features_start = None
     next_section = len(lines)
@@ -61,14 +61,14 @@ def ensure_feature_flag(text: str) -> str:
 
     if features_start is None:
         suffix = "" if text.endswith("\n") else "\n"
-        return text + suffix + "\n[features]\ncodex_hooks = true\n"
+        return "\n".join(lines) + suffix + "\n[features]\nhooks = true\n"
 
     for index in range(features_start + 1, next_section):
-        if re.match(r"\s*codex_hooks\s*=", lines[index]):
-            lines[index] = "codex_hooks = true"
+        if re.match(r"\s*hooks\s*=", lines[index]):
+            lines[index] = "hooks = true"
             return "\n".join(lines) + "\n"
 
-    lines.insert(features_start + 1, "codex_hooks = true")
+    lines.insert(features_start + 1, "hooks = true")
     return "\n".join(lines) + "\n"
 
 
@@ -95,6 +95,31 @@ def _ignore_copy(dir_path: str, names: list[str]) -> set[str]:
     return ignored.intersection(names)
 
 
+def _atomic_copytree(source: Path, destination: Path, ignore=None) -> None:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    token = uuid.uuid4().hex
+    staging = destination.parent / f".{destination.name}.staging-{token}"
+    backup = destination.parent / f".{destination.name}.backup-{token}"
+    shutil.copytree(source, staging, ignore=ignore)
+    moved_old = False
+    try:
+        if destination.exists():
+            destination.replace(backup)
+            moved_old = True
+        staging.replace(destination)
+    except Exception:
+        if destination.exists() and not moved_old:
+            shutil.rmtree(destination, ignore_errors=True)
+        if moved_old and backup.exists() and not destination.exists():
+            backup.replace(destination)
+        raise
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging, ignore_errors=True)
+    if backup.exists():
+        shutil.rmtree(backup)
+
+
 def install(source: Path, codex_home: Path, dry_run: bool = False) -> dict[str, str]:
     source = source.resolve()
     codex_home = codex_home.expanduser().resolve()
@@ -118,15 +143,9 @@ def install(source: Path, codex_home: Path, dry_run: bool = False) -> dict[str, 
         return result
 
     codex_home.mkdir(parents=True, exist_ok=True)
-    plugin_dest.parent.mkdir(parents=True, exist_ok=True)
-    if plugin_dest.exists():
-        shutil.rmtree(plugin_dest)
-    shutil.copytree(source, plugin_dest, ignore=_ignore_copy)
+    _atomic_copytree(source, plugin_dest, ignore=_ignore_copy)
 
-    skill_dest.parent.mkdir(parents=True, exist_ok=True)
-    if skill_dest.exists():
-        shutil.rmtree(skill_dest)
-    shutil.copytree(source / "skills" / "codex-harness-workflow", skill_dest)
+    _atomic_copytree(source / "skills" / "codex-harness-workflow", skill_dest)
 
     new_hooks = build_hooks_config(hook_path)
     existing_hooks: dict[str, Any] = {}

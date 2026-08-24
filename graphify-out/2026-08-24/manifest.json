@@ -1,0 +1,217 @@
+{
+  ".codex-plugin/plugin.json": {
+    "mtime": 1787577511.4276998,
+    "ast_hash": "4b6b3432940389012474f16e2e8c8beb",
+    "semantic_hash": ""
+  },
+  "harness4codex/__init__.py": {
+    "mtime": 1787577511.4276998,
+    "ast_hash": "840d8dc5928d9ef36a27cc275bd18711",
+    "semantic_hash": ""
+  },
+  "harness4codex/__main__.py": {
+    "mtime": 1787576458.5295699,
+    "ast_hash": "93c7a668f8adadb3ba05fab14a474827",
+    "semantic_hash": ""
+  },
+  "harness4codex/classifier.py": {
+    "mtime": 1787578777.4052434,
+    "ast_hash": "f0cceae5e62bedc3d1e6ef0f2254ffad",
+    "semantic_hash": ""
+  },
+  "harness4codex/cli.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "8bc45705294cd2b5f23f519cce6f5e41",
+    "semantic_hash": ""
+  },
+  "harness4codex/diagnostics.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "daeaa7a0b3df51cd7683c005bf4fb982",
+    "semantic_hash": ""
+  },
+  "harness4codex/git_guard.py": {
+    "mtime": 1787576458.533533,
+    "ast_hash": "82279754d7078019c1bb54851042f590",
+    "semantic_hash": ""
+  },
+  "harness4codex/harness_lite_adapter.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "89c254eda546f7754666b19b0d4bf5e7",
+    "semantic_hash": ""
+  },
+  "harness4codex/hook.py": {
+    "mtime": 1787578843.424522,
+    "ast_hash": "790646aa6b69fefcdce9f7142b37f3d7",
+    "semantic_hash": ""
+  },
+  "harness4codex/memory.py": {
+    "mtime": 1787578777.4052434,
+    "ast_hash": "c5d07ad29377b95640c38b9be104aac4",
+    "semantic_hash": ""
+  },
+  "harness4codex/orchestration.py": {
+    "mtime": 1787576458.5402217,
+    "ast_hash": "53d6bd27ec21b998c442ae341a66327e",
+    "semantic_hash": ""
+  },
+  "harness4codex/science_adapter.py": {
+    "mtime": 1787578777.4052434,
+    "ast_hash": "69e698a35d44971d883593adad9d35b9",
+    "semantic_hash": ""
+  },
+  "harness4codex/state.py": {
+    "mtime": 1787578912.3359108,
+    "ast_hash": "1fd018b312d2fbecab2c8f1d5e93bd4a",
+    "semantic_hash": ""
+  },
+  "harness4codex/workflow.py": {
+    "mtime": 1787576458.5402217,
+    "ast_hash": "02d9c15e842fdbbfc7c49a4d10f44b2a",
+    "semantic_hash": ""
+  },
+  "hooks/codex_harness_hook.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "8cbc70273f342f316e2c9adc89311f33",
+    "semantic_hash": ""
+  },
+  "hooks/hooks.json": {
+    "mtime": 1787576993.0488882,
+    "ast_hash": "267928c60b7305be3287b6905b447b7b",
+    "semantic_hash": ""
+  },
+  "pyproject.toml": {
+    "mtime": 1787577511.4276998,
+    "ast_hash": "4774e95e29f970a5d0596c60f2f6261d",
+    "semantic_hash": ""
+  },
+  "scripts/__init__.py": {
+    "mtime": 1787576458.5494814,
+    "ast_hash": "d649b0c9506844eff6b402dfa5db0184",
+    "semantic_hash": ""
+  },
+  "scripts/install.ps1": {
+    "mtime": 1787576458.5519996,
+    "ast_hash": "4b3e94c4a22ee7412c5bec95c6f113b3",
+    "semantic_hash": ""
+  },
+  "scripts/install.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "f1772595dcebe16ae54bc869ae2eb3bf",
+    "semantic_hash": ""
+  },
+  "scripts/install.sh": {
+    "mtime": 1787576458.5519996,
+    "ast_hash": "5c70c43800b42a3ccc0f8cef70e8e5ef",
+    "semantic_hash": ""
+  },
+  "tests/test_classifier.py": {
+    "mtime": 1787576848.5854712,
+    "ast_hash": "4a7da6f090898e0809f5d8898ecbdd28",
+    "semantic_hash": ""
+  },
+  "tests/test_cli.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "e208f9e7d987c2e5c3ba029ac57b00af",
+    "semantic_hash": ""
+  },
+  "tests/test_diagnostics.py": {
+    "mtime": 1787578189.880625,
+    "ast_hash": "fec8b09ee901eaffbfa75925fb86f66d",
+    "semantic_hash": ""
+  },
+  "tests/test_git_guard.py": {
+    "mtime": 1787576458.5636783,
+    "ast_hash": "50914aa3a2702702e1f87b0215f3d325",
+    "semantic_hash": ""
+  },
+  "tests/test_harness_lite_adapter.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "552951e34ac88c5e803eb0476d268ec8",
+    "semantic_hash": ""
+  },
+  "tests/test_hook.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "132ced974f934653d4385cdab9013dbf",
+    "semantic_hash": ""
+  },
+  "tests/test_install.py": {
+    "mtime": 1787578777.4103866,
+    "ast_hash": "dfb5b6bfa347916d04d7496ba1872a53",
+    "semantic_hash": ""
+  },
+  "tests/test_memory.py": {
+    "mtime": 1787578882.5797875,
+    "ast_hash": "594e0df5fb8dc6c89b3eb583d49e2623",
+    "semantic_hash": ""
+  },
+  "tests/test_orchestration.py": {
+    "mtime": 1787576458.5695417,
+    "ast_hash": "163f74ca23661ece4cab820a1dae0856",
+    "semantic_hash": ""
+  },
+  "tests/test_packaging.py": {
+    "mtime": 1787578777.4052434,
+    "ast_hash": "b2e3bc91c74d2ab660cc3f882c530adc",
+    "semantic_hash": ""
+  },
+  "tests/test_science_adapter.py": {
+    "mtime": 1787577076.9279137,
+    "ast_hash": "fd0a54ed23ea8e18c8021b6a7c68725e",
+    "semantic_hash": ""
+  },
+  "tests/test_state.py": {
+    "mtime": 1787578882.5797875,
+    "ast_hash": "93d13df73b4afd864d0c9a169a152ec0",
+    "semantic_hash": ""
+  },
+  "tests/test_workflow.py": {
+    "mtime": 1787576458.5713775,
+    "ast_hash": "a57896d69e0e4aa91e4596dee0ab0e8a",
+    "semantic_hash": ""
+  },
+  "PLANO_AUTOREFORMA_HARNESS4CODEX.md": {
+    "mtime": 1787576458.5028472,
+    "ast_hash": "022d1f50065a3eb8a1f470f4333531a9",
+    "semantic_hash": ""
+  },
+  "README.md": {
+    "mtime": 1787577511.4276998,
+    "ast_hash": "bed8cb005fabf96f25c7f6ef939db87d",
+    "semantic_hash": ""
+  },
+  "WORKFLOW.md": {
+    "mtime": 1787577511.4276998,
+    "ast_hash": "b548b1a5c2a653c64a5fa79a0e5e6f6d",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/plans/2026-04-28-codex-app-multitask-state.md": {
+    "mtime": 1787576458.5200877,
+    "ast_hash": "c1258c1656c2d89077c5bafdf2ffabe4",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/plans/2026-04-28-harness4codex.md": {
+    "mtime": 1787576458.521639,
+    "ast_hash": "7f9a3ad774d404382093109700b5f214",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/plans/2026-04-28-symphony-memory-workflow.md": {
+    "mtime": 1787576458.521639,
+    "ast_hash": "496a035fb8b98aa10feb6e88c5979704",
+    "semantic_hash": ""
+  },
+  "docs/superpowers/specs/2026-04-28-symphony-memory-workflow-design.md": {
+    "mtime": 1787576458.5267491,
+    "ast_hash": "b0b17abb5b26b18d2e7989e2e41f147b",
+    "semantic_hash": ""
+  },
+  "skills/codex-harness-workflow/SKILL.md": {
+    "mtime": 1787577511.4276998,
+    "ast_hash": "1aedf11d83b2c296ccda18305a9702d7",
+    "semantic_hash": ""
+  },
+  "skills/codex-harness-workflow/agents/openai.yaml": {
+    "mtime": 1787576993.0449817,
+    "ast_hash": "d022a3e31cfd0aae51989286ae6e261b",
+    "semantic_hash": ""
+  }
+}

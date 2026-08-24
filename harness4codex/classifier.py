@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import re
 import unicodedata
+from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
@@ -15,28 +15,26 @@ class Classification:
 
 
 BUG_PIPELINE = [
-    "systematic-debugging",
-    "test-driven-development",
-    "verification-before-completion",
+    "superpowers:systematic-debugging",
+    "superpowers:test-driven-development",
+    "superpowers:verification-before-completion",
 ]
 FEATURE_PIPELINE = [
-    "codex-spec-light",
-    "test-driven-development",
-    "verification-before-completion",
+    "superpowers:brainstorming",
+    "superpowers:writing-plans",
+    "superpowers:test-driven-development",
+    "superpowers:verification-before-completion",
 ]
 ARCHITECTURE_PIPELINE = [
-    "codex-design",
-    "writing-plans",
-    "test-driven-development",
-    "requesting-code-review",
-    "verification-before-completion",
+    "superpowers:brainstorming",
+    "superpowers:writing-plans",
+    "superpowers:test-driven-development",
+    "superpowers:requesting-code-review",
+    "superpowers:verification-before-completion",
 ]
-REVIEW_PIPELINE = ["review", "verification-before-completion"]
-DOCS_PIPELINE = [
-    "openai-docs-or-official-docs",
-    "codex-spec-light",
-    "verification-before-completion",
-]
+REVIEW_PIPELINE = ["superpowers:verification-before-completion"]
+DOCS_PIPELINE = ["superpowers:verification-before-completion"]
+OPENAI_DOCS_PIPELINE = ["openai-docs", "superpowers:verification-before-completion"]
 
 
 TASK_SWITCH_PATTERNS = [
@@ -146,7 +144,8 @@ def classify_prompt(prompt: str) -> Classification:
     docs_hits = _matches(DOCS_PATTERNS, text)
     docs_lib_hits = [library for library in DOCS_LIBRARIES if re.search(rf"\b{re.escape(library)}\b", text)]
     if docs_hits and docs_lib_hits:
-        return Classification("DOCS", "api-docs", DOCS_PIPELINE.copy(), docs_hits + docs_lib_hits + reasons, is_task_switch)
+        pipeline = OPENAI_DOCS_PIPELINE if {"openai", "codex"}.intersection(docs_lib_hits) else DOCS_PIPELINE
+        return Classification("DOCS", "api-docs", pipeline.copy(), docs_hits + docs_lib_hits + reasons, is_task_switch)
 
     architecture_hits = _matches(ARCHITECTURE_PATTERNS, text)
     if architecture_hits:
