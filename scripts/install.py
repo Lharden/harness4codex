@@ -9,7 +9,19 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop"]
+EVENTS = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "PreCompact",
+    "PostCompact",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "SessionEnd",
+]
 
 
 def _quote_path(path: str | os.PathLike[str]) -> str:
@@ -39,7 +51,12 @@ def build_hooks_config(hook_path: str | os.PathLike[str]) -> dict[str, Any]:
             "PreToolUse": [_hook_entry(hook_path, "Harness4Codex guard", "Bash|shell_command|apply_patch")],
             "PermissionRequest": [_hook_entry(hook_path, "Harness4Codex permission", "Bash|shell_command")],
             "PostToolUse": [_hook_entry(hook_path, "Harness4Codex state", "Bash|shell_command|apply_patch")],
+            "PreCompact": [_hook_entry(hook_path, "Harness4Codex handoff")],
+            "PostCompact": [_hook_entry(hook_path, "Harness4Codex restore")],
+            "SubagentStart": [_hook_entry(hook_path, "Harness4Codex node start")],
+            "SubagentStop": [_hook_entry(hook_path, "Harness4Codex node result")],
             "Stop": [_hook_entry(hook_path, "Harness4Codex verify")],
+            "SessionEnd": [_hook_entry(hook_path, "Harness4Codex session close")],
         }
     }
 
@@ -145,7 +162,9 @@ def install(source: Path, codex_home: Path, dry_run: bool = False) -> dict[str, 
     codex_home.mkdir(parents=True, exist_ok=True)
     _atomic_copytree(source, plugin_dest, ignore=_ignore_copy)
 
-    _atomic_copytree(source / "skills" / "codex-harness-workflow", skill_dest)
+    for skill_source in sorted((source / "skills").iterdir()):
+        if skill_source.is_dir() and (skill_source / "SKILL.md").exists():
+            _atomic_copytree(skill_source, codex_home / "skills" / skill_source.name)
 
     new_hooks = build_hooks_config(hook_path)
     existing_hooks: dict[str, Any] = {}

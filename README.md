@@ -1,19 +1,23 @@
 # Harness4Codex
 
-Harness4Codex is the Codex-native workflow supervisor. It combines Codex hooks, scoped state, skills, and guardrails while exposing Harness Lite and Science Harness as bounded capabilities.
-
-It uses Codex hooks, a local state machine, a workflow skill, and git guardrails. It does not write to `~/.claude` and does not assume Claude Code hook semantics.
+Harness4Codex is a contract-backed Codex workflow supervisor. It combines full-lifecycle hooks, scoped transactional state, SDD v3 skills, human gates, evidence, Graphify context, operational memory and bounded external capabilities.
 
 ## What it adds
 
-- Prompt classification into `C0`, `C1`, `C2`, `C3`, `CR`, and `DOCS`.
-- Persistent state under `~/.codex/harness`.
+- Deterministic classification with semantic confirmation and human override, normalized to `L0/L1/L2 + kind` while preserving legacy Codex labels.
+- SQLite WAL state under `~/.codex/harness`, isolated by session, repository and worktree, with revision CAS, leases and fencing.
 - Context injection that asks Codex to use `codex-harness-workflow`.
-- Git guardrails for `git push --force`, `git reset --hard`, `git clean -f`, and similar commands.
-- Verification gate on `Stop` for active implementation pipelines.
+- SDD v3 pipelines with light/full specs, adversarial review, design docs, plan validation, TDD and item-by-item spec verification.
+- Human approval gates for specs, plans, clarifications, branches and bounded escalation.
+- Parsed command policy for destructive Git operations and Codex plugin mutations.
+- Revision-bound verification evidence and bounded continuation on `Stop`.
 - Repo-local `WORKFLOW.md` discovery for versioned workflow policy.
-- SQLite-backed searchable memory and consolidation proposals under `~/.codex/harness`.
-- CLI commands for status, workflow inspection, and memory search/consolidation.
+- FTS5 operational memory, cited AI-Brain wiki search and reversible secondary-memory compression.
+- Graphify freshness/provenance artifacts and degraded structural fallback.
+- Capability arsenal with closed vocabulary, overlap and budget checks.
+- Persistent conversation Branch Keeper with approval, parking, recall and close.
+- Structured multi-agent node census and `NodeResult` reconciliation.
+- Vendored Harness4Contract snapshot with machine-readable conformance reports.
 - Deterministic workspace primitives for future Symphony-style issue orchestration.
 - Codex app multitask safety: hook state is isolated by `session_id + cwd`, with atomic owner locks for each scoped state file.
 - Automatic advisory Harness Lite route preview for `C1+` when its control token is configured.
@@ -38,7 +42,7 @@ Or on PowerShell:
 The compatibility installer:
 
 1. Copies the plugin to `~/.codex/plugins/harness4codex`.
-2. Copies the skill to `~/.codex/skills/codex-harness-workflow`.
+2. Installs the packaged Harness4Codex skills.
 3. Enables `[features] hooks = true`.
 4. Merges Harness4Codex entries into `~/.codex/hooks.json`.
 
@@ -78,6 +82,12 @@ python -m harness4codex status
 python -m harness4codex workflow show
 python -m harness4codex memory search verification
 python -m harness4codex memory consolidate
+python -m harness4codex memory compress recent.md --dry-run
+python -m harness4codex wiki build --root "$env:VAULT_PATH\AI-Brain"
+python -m harness4codex wiki query "durable pipeline state" --root "$env:VAULT_PATH\AI-Brain"
+python -m harness4codex contract check --json
+python -m harness4codex graph context --task TASK --scope SCOPE --query "affected components"
+python -m harness4codex branch list --home "$HOME\.codex\harness" --task TASK
 python -m harness4codex doctor --json
 python -m harness4codex lite preview "Implementar CSV" --level C2
 ```

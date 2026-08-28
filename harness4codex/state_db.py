@@ -151,6 +151,24 @@ class HarnessDatabase:
                     expires_at REAL NOT NULL,
                     heartbeat_at REAL NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS branches (
+                    branch_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL REFERENCES tasks(task_id),
+                    scope_id TEXT NOT NULL REFERENCES scopes(scope_id),
+                    slug TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    topic TEXT NOT NULL,
+                    topic_hash TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    offered_turn INTEGER NOT NULL,
+                    seed_path TEXT,
+                    conclusion TEXT,
+                    approved_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(task_id, slug),
+                    UNIQUE(task_id, topic_hash)
+                );
                 """
             )
 
@@ -376,6 +394,112 @@ class HarnessDatabase:
             )
             self._bump(connection, task_id)
         return self.task(task_id)
+
+    def create_branch(
+        self,
+        task_id: str,
+        *,
+        branch_id: str,
+        slug: str,
+        name: str,
+        topic: str,
+        topic_hash: str,
+        offered_turn: int,
+    ) -> dict[str, Any]:
+        now = utc_now()
+        with self._write() as connection:
+            task = self._locked_task(connection, task_id)
+            connection.execute(
+                """
+                INSERT INTO branches(
+                    branch_id, task_id, scope_id, slug, name, topic, topic_hash,
+                    status, offered_turn, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+                """,
+                (
+                    branch_id,
+                    task_id,
+                    task["scope_id"],
+                    slug,
+                    name,
+                    topic,
+                    topic_hash,
+                    offered_turn,
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO gates(task_id, gate_type, status, created_at) VALUES (?, 'branch-open', 'pending', ?)",
+                (task_id, now),
+            )
+            connection.execute(
+                "UPDATE tasks SET status = 'awaiting_gate', revision = revision + 1, updated_at = ? WHERE task_id = ?",
+                (now, task_id),
+            )
+        return self.branch(branch_id)
+
+    def branch(self, branch_id: str) -> dict[str, Any]:
+        with self._connect() as connection:
+            row = connection.execute("SELECT * FROM branches WHERE branch_id = ?", (branch_id,)).fetchone()
+        if row is None:
+            raise StateTransitionError(f"branch not found: {branch_id}")
+        return dict(row)
+
+    def list_branches(self, task_id: str) -> list[dict[str, Any]]:
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM branches WHERE task_id = ? ORDER BY created_at, branch_id", (task_id,)
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def approve_branch(self, branch_id: str) -> dict[str, Any]:
+        now = utc_now()
+        with self._write() as connection:
+            branch = connection.execute("SELECT * FROM branches WHERE branch_id = ?", (branch_id,)).fetchone()
+            if branch is None:
+                raise StateTransitionError(f"branch not found: {branch_id}")
+            gate = connection.execute(
+                "SELECT id FROM gates WHERE task_id = ? AND gate_type = 'branch-open' AND status = 'pending' "
+                "ORDER BY id DESC LIMIT 1",
+                (branch["task_id"],),
+            ).fetchone()
+            if gate is None:
+                raise StateTransitionError("pending branch-open gate not found")
+            connection.execute(
+                "UPDATE gates SET status = 'resolved', decision = 'approve', resolved_at = ? WHERE id = ?",
+                (now, gate["id"]),
+            )
+            connection.execute(
+                "UPDATE branches SET approved_at = ?, updated_at = ? WHERE branch_id = ?",
+                (now, now, branch_id),
+            )
+            connection.execute(
+                "UPDATE tasks SET status = 'active', revision = revision + 1, updated_at = ? WHERE task_id = ?",
+                (now, branch["task_id"]),
+            )
+        return self.branch(branch_id)
+
+    def update_branch(
+        self,
+        branch_id: str,
+        *,
+        status: str,
+        seed_path: str | None = None,
+        conclusion: str | None = None,
+    ) -> dict[str, Any]:
+        if status not in {"pending", "open", "parked", "recalled", "closed"}:
+            raise StateTransitionError(f"invalid branch status: {status}")
+        with self._write() as connection:
+            branch = connection.execute("SELECT 1 FROM branches WHERE branch_id = ?", (branch_id,)).fetchone()
+            if branch is None:
+                raise StateTransitionError(f"branch not found: {branch_id}")
+            connection.execute(
+                "UPDATE branches SET status = ?, seed_path = COALESCE(?, seed_path), "
+                "conclusion = COALESCE(?, conclusion), updated_at = ? WHERE branch_id = ?",
+                (status, seed_path, conclusion, utc_now(), branch_id),
+            )
+        return self.branch(branch_id)
 
     def reclassify(
         self,

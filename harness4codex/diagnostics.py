@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import os
 import shutil
+import json
+import sqlite3
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import tomllib
+
+from .contract import ContractSnapshot
 
 
 @dataclass(frozen=True)
@@ -198,6 +202,39 @@ def run_doctor(
                     "Harness4Codex is registered by both the plugin and the global hooks file.",
                 )
             )
+
+    snapshot = ContractSnapshot.load()
+    if snapshot.verify_lock():
+        checks.append(DiagnosticCheck("CONTRACT_LOCK_VALID", "pass", f"Harness4Contract {snapshot.version} lock is valid."))
+    else:
+        checks.append(DiagnosticCheck("CONTRACT_LOCK_INVALID", "fail", "Vendored Harness4Contract snapshot does not match its lock."))
+
+    hook_path = Path(__file__).resolve().parents[1] / "hooks" / "hooks.json"
+    required_hooks = {
+        "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
+        "PreCompact", "PostCompact", "SubagentStart", "SubagentStop", "Stop", "SessionEnd",
+    }
+    try:
+        hook_payload = json.loads(hook_path.read_text(encoding="utf-8"))
+        registered = set(hook_payload.get("hooks") or {})
+    except (OSError, json.JSONDecodeError):
+        registered = set()
+    missing_hooks = sorted(required_hooks - registered)
+    if missing_hooks:
+        checks.append(DiagnosticCheck("LIFECYCLE_HOOKS_INCOMPLETE", "fail", f"Missing lifecycle hooks: {missing_hooks}"))
+    else:
+        checks.append(DiagnosticCheck("FULL_LIFECYCLE_HOOKS", "pass", "All Codex lifecycle hooks are registered."))
+
+    state_db = home / "harness.db"
+    if state_db.exists():
+        try:
+            with sqlite3.connect(state_db) as connection:
+                integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+        except sqlite3.Error as exc:
+            checks.append(DiagnosticCheck("STATE_DB_ERROR", "fail", f"State database could not be checked: {exc}"))
+        else:
+            status = "pass" if integrity == "ok" else "fail"
+            checks.append(DiagnosticCheck("STATE_DB_INTEGRITY", status, f"SQLite integrity_check: {integrity}."))
 
     return DoctorReport(
         ok=not any(check.status == "fail" for check in checks),

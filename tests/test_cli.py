@@ -171,3 +171,48 @@ def test_task_transition_cli_rejects_stale_revision(tmp_path, capsys):
 
     assert exit_code == 2
     assert "revision mismatch" in capsys.readouterr().out
+
+
+def test_contract_check_cli_reports_conformance(capsys):
+    exit_code = run(["contract", "check", "--json"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert '"conformant": true' in output
+    assert '"adapter": "harness4codex"' in output
+
+
+def test_memory_compress_and_wiki_cli(tmp_path, capsys):
+    memory = tmp_path / "recent.md"
+    memory.write_text("Basically, I think this is ready.\n", encoding="utf-8")
+    assert run(["memory", "compress", str(memory)]) == 0
+    assert "saved_chars" in capsys.readouterr().out
+
+    vault = tmp_path / "AI-Brain"
+    vault.mkdir()
+    (vault / "decision.md").write_text("# Storage\nSQLite WAL is durable.\n", encoding="utf-8")
+    assert run(["wiki", "build", "--root", str(vault)]) == 0
+    assert run(["wiki", "query", "SQLite durable", "--root", str(vault)]) == 0
+    assert "[[decision]]" in capsys.readouterr().out
+
+
+def test_branch_cli_offer_approve_open_and_list(tmp_path, capsys):
+    db = HarnessDatabase(tmp_path)
+    task = db.start_task(
+        scope_id="s", legacy_level="C2", tier="L2", kind="feature",
+        pipeline=["discuss", "tdd"], prompt="branch",
+    )
+    assert run([
+        "branch", "offer", "--home", str(tmp_path), "--task", task["task_id"],
+        "--name", "Graph retrieval", "--topic", "independent graph retrieval", "--turn", "10",
+    ]) == 0
+    offered = db.list_branches(task["task_id"])[0]
+    assert run(["branch", "approve", "--home", str(tmp_path), "--branch", offered["branch_id"]]) == 0
+    assert run([
+        "branch", "open", "--home", str(tmp_path), "--branch", offered["branch_id"],
+        "--seed", "seed.md",
+    ]) == 0
+    assert run(["branch", "list", "--home", str(tmp_path), "--task", task["task_id"]]) == 0
+    output = capsys.readouterr().out
+    assert '"status": "open"' in output
+    assert '"codex"' in output and '"fork"' in output

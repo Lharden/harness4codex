@@ -1,7 +1,7 @@
 {
   "name": "harness4codex",
-  "version": "0.4.0",
-  "description": "Codex-native workflow harness with hooks, state, skills, and git guardrails.",
+  "version": "1.0.0",
+  "description": "Contract-backed Codex workflow harness with transactional SDD, evidence, memory, graph and branch orchestration.",
   "author": {
     "name": "Lharden"
   },
@@ -18,8 +18,8 @@
   "skills": "./skills/",
   "interface": {
     "displayName": "Harness4Codex",
-    "shortDescription": "Workflow orchestration and guardrails for Codex",
-    "longDescription": "Harness4Codex adds a Codex-native state machine, lifecycle hook handlers, workflow skill guidance, and git safety guardrails for implementation, debugging, review, and verification tasks.",
+    "shortDescription": "Transactional SDD orchestration for Codex",
+    "longDescription": "Harness4Codex implements the Harness4Contract capability surface with scoped transactional state, SDD v3 skills, human gates, evidence-bound completion, Graphify context, operational memory, capability arsenal and conversation branching.",
     "developerName": "Lharden",
     "category": "Coding",
     "capabilities": [
