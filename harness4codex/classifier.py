@@ -4,6 +4,8 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 
+from .contract import ContractSnapshot
+
 
 @dataclass(frozen=True)
 class Classification:
@@ -14,27 +16,13 @@ class Classification:
     is_task_switch: bool = False
 
 
-BUG_PIPELINE = [
-    "superpowers:systematic-debugging",
-    "superpowers:test-driven-development",
-    "superpowers:verification-before-completion",
-]
-FEATURE_PIPELINE = [
-    "superpowers:brainstorming",
-    "superpowers:writing-plans",
-    "superpowers:test-driven-development",
-    "superpowers:verification-before-completion",
-]
-ARCHITECTURE_PIPELINE = [
-    "superpowers:brainstorming",
-    "superpowers:writing-plans",
-    "superpowers:test-driven-development",
-    "superpowers:requesting-code-review",
-    "superpowers:verification-before-completion",
-]
-REVIEW_PIPELINE = ["superpowers:verification-before-completion"]
-DOCS_PIPELINE = ["superpowers:verification-before-completion"]
-OPENAI_DOCS_PIPELINE = ["openai-docs", "superpowers:verification-before-completion"]
+_CONTRACT = ContractSnapshot.load()
+BUG_PIPELINE = _CONTRACT.pipeline("L1", "bug")
+FEATURE_PIPELINE = _CONTRACT.pipeline("L1", "feature")
+ARCHITECTURE_PIPELINE = _CONTRACT.pipeline("L2", "architecture")
+REVIEW_PIPELINE = _CONTRACT.pipeline("L1", "review")
+DOCS_PIPELINE = _CONTRACT.pipeline("L1", "docs")
+OPENAI_DOCS_PIPELINE = DOCS_PIPELINE
 
 
 TASK_SWITCH_PATTERNS = [

@@ -1,4 +1,5 @@
 from harness4codex.classifier import classify_prompt
+from harness4codex.contract import ContractSnapshot
 
 
 def test_simple_question_is_c0():
@@ -14,8 +15,7 @@ def test_bug_promotes_debugging_and_tdd():
 
     assert result.level == "C1"
     assert result.kind == "bug"
-    assert "superpowers:systematic-debugging" in result.pipeline
-    assert "superpowers:test-driven-development" in result.pipeline
+    assert result.pipeline == ["systematic-debugging", "tdd", "verify"]
 
 
 def test_feature_uses_light_spec_pipeline():
@@ -23,8 +23,8 @@ def test_feature_uses_light_spec_pipeline():
 
     assert result.level == "C2"
     assert result.kind == "feature"
-    assert result.pipeline[0] == "superpowers:brainstorming"
-    assert result.pipeline[-1] == "superpowers:verification-before-completion"
+    assert result.pipeline[0] == "write-spec-light"
+    assert result.pipeline[-1] == "verify-against-spec"
 
 
 def test_architecture_uses_design_and_review():
@@ -32,8 +32,9 @@ def test_architecture_uses_design_and_review():
 
     assert result.level == "C3"
     assert result.kind == "architecture"
-    assert "superpowers:writing-plans" in result.pipeline
-    assert "superpowers:requesting-code-review" in result.pipeline
+    assert "graph-context" in result.pipeline
+    assert "validate-plan" in result.pipeline
+    assert result.pipeline[-1] == "verify-multimodel"
 
 
 def test_review_is_distinct_from_implementation():
@@ -41,7 +42,7 @@ def test_review_is_distinct_from_implementation():
 
     assert result.level == "CR"
     assert result.kind == "review"
-    assert result.pipeline == ["superpowers:verification-before-completion"]
+    assert result.pipeline == ["code-review", "verify"]
 
 
 def test_docs_sensitive_prompt_uses_docs_pipeline():
@@ -49,17 +50,17 @@ def test_docs_sensitive_prompt_uses_docs_pipeline():
 
     assert result.level == "DOCS"
     assert result.kind == "api-docs"
-    assert result.pipeline[0] == "superpowers:verification-before-completion"
+    assert result.pipeline == ["source-selection", "documentation", "verify"]
 
 
 def test_openai_docs_prompt_uses_the_installed_openai_docs_skill():
     result = classify_prompt("Consulte a documentação atual do Codex MCP.")
 
     assert result.level == "DOCS"
-    assert result.pipeline[0] == "openai-docs"
+    assert result.pipeline == ["source-selection", "documentation", "verify"]
 
 
-def test_pipelines_contain_no_unqualified_or_ghost_skill_names():
+def test_classifier_pipelines_are_the_vendored_contract_pipelines():
     prompts = [
         "Corrija o bug de login.",
         "Implemente exportação CSV.",
@@ -68,8 +69,11 @@ def test_pipelines_contain_no_unqualified_or_ghost_skill_names():
         "Como configuro Pydantic v2 com FastAPI usando a API atual?",
     ]
 
+    contract = ContractSnapshot.load()
     for prompt in prompts:
-        assert all(":" in skill or skill == "openai-docs" for skill in classify_prompt(prompt).pipeline)
+        result = classify_prompt(prompt)
+        normalized = contract.normalize(result.level, result.kind)
+        assert result.pipeline == contract.pipeline(normalized["tier"], normalized["kind"])
 
 
 def test_task_switch_detected():

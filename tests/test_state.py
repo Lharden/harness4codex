@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from harness4codex.classifier import Classification
 from harness4codex.state import HarnessStateStore, store_for_payload
+from harness4codex.state_db import HarnessDatabase
 
 
 def test_state_initializes_idle(tmp_path):
@@ -46,7 +47,7 @@ def test_recording_files_promotes_simple_question(tmp_path):
 
     assert state["level"] == "C1"
     assert state["status"] == "active"
-    assert "superpowers:verification-before-completion" in state["pipeline"]
+    assert state["pipeline"] == ["systematic-debugging", "tdd", "verify"]
 
 
 def test_event_log_appends_json_lines(tmp_path):
@@ -139,3 +140,28 @@ def test_concurrent_event_writers_preserve_every_json_line(tmp_path):
     records = [json.loads(line) for line in lines]
     assert len(records) == 64
     assert {record["payload"]["index"] for record in records} == set(range(64))
+
+
+def test_legacy_projection_is_dual_written_to_transactional_database(tmp_path):
+    store = HarnessStateStore(tmp_path)
+
+    state = store.start_task(Classification("C2", "feature", ["write-spec-light", "tdd", "verify"], [], False), "build")
+
+    transactional = HarnessDatabase(tmp_path).current_task("legacy")
+    assert transactional is not None
+    assert transactional["task_id"] == state["task_id"]
+    assert state["tier"] == "L1"
+    assert state["current_step"] == transactional["phase"] == "write-spec-light"
+    assert (tmp_path / "harness.db").exists()
+
+
+def test_legacy_mark_verified_and_file_touch_update_database_freshness(tmp_path):
+    store = HarnessStateStore(tmp_path)
+    state = store.start_task(Classification("C1", "bug", ["verify"], [], False), "fix")
+
+    state = store.mark_verified("pytest -q")
+    assert HarnessDatabase(tmp_path).task(state["task_id"])["verified"] is True
+
+    state = store.record_file("app.py")
+    assert state["verified"] is False
+    assert HarnessDatabase(tmp_path).task(state["task_id"])["verified"] is False

@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .classifier import BUG_PIPELINE, Classification
+from .contract import ContractSnapshot
+from .state_db import HarnessDatabase, StateTransitionError
 
 
 class HarnessStateError(RuntimeError):
@@ -36,10 +38,15 @@ def default_state() -> dict:
         "scope": None,
         "classification": None,
         "level": "C0",
+        "tier": "L0",
         "kind": "idle",
         "status": "idle",
         "pipeline": [],
         "current_step": None,
+        "revision": 0,
+        "code_revision": 0,
+        "owner_epoch": 1,
+        "pending_gate": None,
         "prompt": None,
         "files": [],
         "verified": False,
@@ -65,6 +72,8 @@ class HarnessStateStore:
         self.errors_path = self.home / "errors.log"
         self.lock_path = self.home / "state.json.lock"
         self.home.mkdir(parents=True, exist_ok=True)
+        self.database = HarnessDatabase(self.memory_home)
+        self.contract = ContractSnapshot.load()
 
     @contextmanager
     def _lock(self, timeout: float = 2.0) -> Iterator[None]:
@@ -156,12 +165,14 @@ class HarnessStateStore:
     def start_task(self, classification: Classification, prompt: str) -> dict:
         with self._lock():
             now = utc_now()
+            normalized = self.contract.normalize(classification.level, classification.kind)
             state = default_state()
             state.update(
                 {
                     "task_id": f"{int(time.time() * 1000)}-{classification.level.lower()}",
                     "classification": asdict(classification),
                     "level": classification.level,
+                    "tier": normalized["tier"],
                     "kind": classification.kind,
                     "status": "active" if classification.pipeline else "done",
                     "pipeline": classification.pipeline.copy(),
@@ -172,20 +183,35 @@ class HarnessStateStore:
                     "updated_at": now,
                 }
             )
+            transactional = self.database.start_task(
+                scope_id=self.scope or "legacy",
+                legacy_level=classification.level,
+                tier=normalized["tier"],
+                kind=normalized["kind"],
+                pipeline=classification.pipeline.copy(),
+                prompt=prompt,
+                task_id=state["task_id"],
+            )
+            self._merge_transactional(state, transactional)
             return self._write_unlocked(state)
 
     def record_file(self, path: str) -> dict:
-        normalized = str(Path(path))
+        normalized_path = str(Path(path))
         with self._lock():
             state = self._read_unlocked()
             files = state.setdefault("files", [])
-            if normalized not in files:
-                files.append(normalized)
+            if normalized_path not in files:
+                files.append(normalized_path)
             if state.get("verified"):
                 state["verified"] = False
                 state["last_verification"] = None
                 if state.get("pipeline"):
                     state["status"] = "active"
+            transactional = (
+                self.database.touch_file(state["task_id"], normalized_path)
+                if state.get("task_id")
+                else None
+            )
             if state.get("level") == "C0" and len(files) >= 3:
                 state["level"] = "C1"
                 state["kind"] = "escalated-edit"
@@ -200,15 +226,61 @@ class HarnessStateStore:
                     "reasons": ["C0 prompt edited three or more files"],
                     "is_task_switch": False,
                 }
+                normalized_classification = self.contract.normalize("C1", "bug")
+                transactional = self.database.reclassify(
+                    state["task_id"],
+                    legacy_level="C1",
+                    tier=normalized_classification["tier"],
+                    kind=normalized_classification["kind"],
+                    pipeline=state["pipeline"],
+                )
+            if transactional is not None:
+                self._merge_transactional(state, transactional)
             return self._write_unlocked(state)
 
     def mark_verified(self, command: str) -> dict:
+        return self.record_verification(
+            command,
+            exit_code=0,
+            tests_collected=1,
+            tests_passed=1,
+            output_hash=hashlib.sha256(command.encode("utf-8")).hexdigest(),
+        )
+
+    def record_verification(
+        self,
+        command: str,
+        *,
+        exit_code: int | None,
+        tests_collected: int | None,
+        tests_passed: int | None,
+        output_hash: str | None,
+    ) -> dict:
         with self._lock():
             state = self._read_unlocked()
-            state["verified"] = True
-            state["last_verification"] = {"command": command, "at": utc_now()}
-            if state.get("status") == "active":
+            valid = exit_code == 0 and bool(tests_collected and tests_collected > 0) and tests_passed == tests_collected
+            state["verified"] = valid
+            state["last_verification"] = {
+                "command": command,
+                "at": utc_now(),
+                "exit_code": exit_code,
+                "tests_collected": tests_collected,
+                "tests_passed": tests_passed,
+                "output_hash": output_hash,
+            }
+            if valid and state.get("status") == "active":
                 state["status"] = "verified"
+            if state.get("task_id"):
+                transactional = self.database.record_evidence(
+                    state["task_id"],
+                    evidence_type="test",
+                    command=command,
+                    exit_code=exit_code,
+                    tests_collected=tests_collected,
+                    tests_passed=tests_passed,
+                    output_hash=output_hash,
+                )
+                self._merge_transactional(state, transactional)
             return self._write_unlocked(state)
 
     def increment_stop_continuations(self) -> dict:
@@ -217,10 +289,28 @@ class HarnessStateStore:
             state["stop_continuations"] = int(state.get("stop_continuations") or 0) + 1
             return self._write_unlocked(state)
 
+    def set_pending_gate(self, gate_type: str) -> dict:
+        with self._lock():
+            state = self._read_unlocked()
+            state["status"] = "awaiting_gate"
+            state["pending_gate"] = gate_type
+            if state.get("task_id"):
+                transactional = self.database.open_gate(state["task_id"], gate_type)
+                self._merge_transactional(state, transactional)
+            return self._write_unlocked(state)
+
     def log_event(self, event: str, payload: dict) -> None:
         record = {"at": utc_now(), "event": event, "payload": payload}
-        with self._lock(), self.events_path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, sort_keys=True) + "\n")
+        with self._lock():
+            state = self._read_unlocked()
+            with self.events_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, sort_keys=True) + "\n")
+            self.database.log_event(
+                self.scope or "legacy",
+                event,
+                payload,
+                task_id=state.get("task_id"),
+            )
 
     def log_error(self, message: str) -> None:
         line = f"{utc_now()} {message}\n"
@@ -231,6 +321,18 @@ class HarnessStateStore:
             # Error reporting is a last-resort path and must not recursively
             # fail the hook whose original exception it was meant to preserve.
             pass
+
+    @staticmethod
+    def _merge_transactional(state: dict, transactional: dict) -> None:
+        state["tier"] = transactional["tier"]
+        state["kind"] = transactional["kind"]
+        state["current_step"] = transactional["phase"]
+        state["revision"] = transactional["revision"]
+        state["code_revision"] = transactional["code_revision"]
+        state["owner_epoch"] = transactional["owner_epoch"]
+        state["pending_gate"] = transactional["pending_gate"]
+        state["verified"] = transactional["verified"]
+        state["status"] = transactional["status"]
 
 
 def store_for_payload(payload: dict, home: str | os.PathLike[str] | None = None) -> HarnessStateStore:

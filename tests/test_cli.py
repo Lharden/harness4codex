@@ -2,6 +2,7 @@ from harness4codex.classifier import Classification
 from harness4codex.cli import run
 from harness4codex.memory import HarnessMemoryStore
 from harness4codex.state import HarnessStateStore, store_for_payload
+from harness4codex.state_db import HarnessDatabase
 
 
 def test_status_prints_state_workflow_and_memory_count(tmp_path, capsys):
@@ -98,3 +99,75 @@ def test_lite_submit_refuses_without_explicit_execution_opt_in(tmp_path, capsys,
     output = capsys.readouterr().out
     assert exit_code == 2
     assert "opt-in" in output
+
+
+def test_classification_confirm_updates_transactional_task(tmp_path, capsys):
+    store = HarnessStateStore(tmp_path)
+    state = store.start_task(Classification("C2", "feature", ["write-spec-light", "tdd", "verify-against-spec"], [], False), "build")
+
+    exit_code = run(
+        [
+            "classification",
+            "confirm",
+            "--home",
+            str(tmp_path),
+            "--task",
+            state["task_id"],
+            "--tier",
+            "L2",
+            "--kind",
+            "feature",
+            "--confidence",
+            "0.9",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "L2-feature" in capsys.readouterr().out
+    assert HarnessDatabase(tmp_path).task(state["task_id"])["phase"] == "discuss"
+
+
+def test_task_artifact_evidence_and_completion_commands_drive_fsm(tmp_path, capsys):
+    store = HarnessStateStore(tmp_path)
+    state = store.start_task(Classification("C2", "feature", ["write-spec-light", "tdd", "verify-against-spec"], [], False), "build")
+
+    assert run([
+        "artifact", "record", "--home", str(tmp_path), "--task", state["task_id"],
+        "--type", "spec-light", "--path", "docs/specs/demo-spec-light.md", "--hash", "abc",
+    ]) == 0
+    state = HarnessDatabase(tmp_path).task(state["task_id"])
+    assert run([
+        "task", "transition", "--home", str(tmp_path), "--task", state["task_id"],
+        "--to", "tdd", "--expect-revision", str(state["revision"]),
+    ]) == 0
+    state = HarnessDatabase(tmp_path).task(state["task_id"])
+    assert run([
+        "task", "transition", "--home", str(tmp_path), "--task", state["task_id"],
+        "--to", "verify-against-spec", "--expect-revision", str(state["revision"]),
+    ]) == 0
+    assert run([
+        "evidence", "record", "--home", str(tmp_path), "--task", state["task_id"],
+        "--type", "test", "--command", "pytest -q", "--exit-code", "0",
+        "--tests-collected", "5", "--tests-passed", "5", "--output-hash", "out",
+    ]) == 0
+    state = HarnessDatabase(tmp_path).task(state["task_id"])
+    assert run([
+        "task", "complete", "--home", str(tmp_path), "--task", state["task_id"],
+        "--expect-revision", str(state["revision"]),
+    ]) == 0
+
+    assert HarnessDatabase(tmp_path).task(state["task_id"])["status"] == "done"
+    assert "done" in capsys.readouterr().out
+
+
+def test_task_transition_cli_rejects_stale_revision(tmp_path, capsys):
+    store = HarnessStateStore(tmp_path)
+    state = store.start_task(Classification("C1", "bug", ["systematic-debugging", "tdd", "verify"], [], False), "fix")
+
+    exit_code = run([
+        "task", "transition", "--home", str(tmp_path), "--task", state["task_id"],
+        "--to", "tdd", "--expect-revision", "999",
+    ])
+
+    assert exit_code == 2
+    assert "revision mismatch" in capsys.readouterr().out

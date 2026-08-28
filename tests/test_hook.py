@@ -263,6 +263,44 @@ def test_successful_verification_is_recorded_from_nested_response(tmp_path):
     assert HarnessStateStore(tmp_path).load()["verified"] is True
 
 
+def test_zero_collected_tests_do_not_satisfy_stop_gate(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija o bug."},
+        harness_home=tmp_path,
+    )
+
+    handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"cmd": "python -m pytest -q"},
+            "tool_response": {"content": [{"type": "text", "text": "Process exited with code 0\nno tests ran"}]},
+        },
+        harness_home=tmp_path,
+    )
+
+    assert HarnessStateStore(tmp_path).load()["verified"] is False
+    assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
+
+
+def test_stop_escalates_after_two_automatic_continuations_then_allows_human_gate(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
+        harness_home=tmp_path,
+    )
+
+    assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
+    assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
+    escalation = _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))
+
+    assert escalation["decision"] == "block"
+    assert "user" in escalation["reason"].lower()
+    state = HarnessStateStore(tmp_path).load()
+    assert state["status"] == "awaiting_gate"
+    assert state["pending_gate"] == "escalation"
+    assert handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path) == ""
+
+
 def test_write_after_verification_invalidates_the_gate(tmp_path):
     store = HarnessStateStore(tmp_path)
     handle_payload(

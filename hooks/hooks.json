@@ -69,6 +69,58 @@
         ]
       }
     ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
+            "timeout": 10,
+            "statusMessage": "Harness4Codex handoff"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
+            "timeout": 10,
+            "statusMessage": "Harness4Codex resume"
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
+            "timeout": 10,
+            "statusMessage": "Harness4Codex node start"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
+            "timeout": 10,
+            "statusMessage": "Harness4Codex node census"
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -78,6 +130,19 @@
             "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex verify"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
+            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
+            "timeout": 3,
+            "statusMessage": "Harness4Codex flush"
           }
         ]
       }

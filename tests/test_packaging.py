@@ -42,3 +42,21 @@ def test_plugin_hook_uses_portable_plugin_root_commands():
 
     assert "PLUGIN_ROOT" in command_hook["command"]
     assert "commandWindows" in command_hook
+
+
+def test_plugin_registers_full_codex_lifecycle():
+    config = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+
+    assert {
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PermissionRequest",
+        "PostToolUse",
+        "PreCompact",
+        "PostCompact",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+        "SessionEnd",
+    } <= set(config["hooks"])

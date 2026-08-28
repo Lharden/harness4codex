@@ -86,3 +86,18 @@ def test_wal_memory_store_accepts_concurrent_hook_writers(tmp_path):
         list(pool.map(write, range(64)))
 
     assert HarnessMemoryStore(tmp_path).history_count() == 64
+
+
+def test_memory_search_uses_fts5_and_handles_punctuation(tmp_path):
+    store = HarnessMemoryStore(tmp_path)
+    store.record_history("Decision", "Graphify freshness requires repository provenance", {"scope": "demo"})
+
+    matches = store.search("Graphify freshness?")
+
+    assert len(matches) == 1
+    assert matches[0]["event"] == "Decision"
+    with store._connect() as connection:
+        table = connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'history_fts'"
+        ).fetchone()
+    assert table is not None

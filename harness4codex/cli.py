@@ -6,6 +6,7 @@ import os
 from collections.abc import Sequence
 from pathlib import Path
 
+from .contract import ContractSnapshot
 from .diagnostics import run_doctor
 from .harness_lite_adapter import (
     HarnessLiteClient,
@@ -15,6 +16,7 @@ from .harness_lite_adapter import (
 )
 from .memory import HarnessMemoryStore, MemoryConsolidator
 from .state import HarnessStateStore, list_session_states
+from .state_db import HarnessDatabase, StateTransitionError
 from .workflow import load_workflow
 
 
@@ -53,6 +55,58 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--home", type=Path, default=Path.home() / ".codex")
     doctor.add_argument("--json", action="store_true")
     doctor.set_defaults(func=_cmd_doctor)
+
+    classification = subparsers.add_parser("classification", help="Confirm or override task classification.")
+    classification_sub = classification.add_subparsers(dest="classification_command", required=True)
+    classification_confirm = classification_sub.add_parser("confirm")
+    classification_confirm.add_argument("--home", type=Path, required=True)
+    classification_confirm.add_argument("--task", required=True)
+    classification_confirm.add_argument("--tier", choices=["L0", "L1", "L2"], required=True)
+    classification_confirm.add_argument(
+        "--kind",
+        choices=["question", "feature", "bug", "refactor", "architecture", "review", "docs"],
+        required=True,
+    )
+    classification_confirm.add_argument("--confidence", type=float, required=True)
+    classification_confirm.add_argument("--source", choices=["semantic", "human_override"], default="semantic")
+    classification_confirm.set_defaults(func=_cmd_classification_confirm)
+
+    task = subparsers.add_parser("task", help="Drive the transactional task state machine.")
+    task_sub = task.add_subparsers(dest="task_command", required=True)
+    task_transition = task_sub.add_parser("transition")
+    task_transition.add_argument("--home", type=Path, required=True)
+    task_transition.add_argument("--task", required=True)
+    task_transition.add_argument("--to", required=True)
+    task_transition.add_argument("--expect-revision", type=int, required=True)
+    task_transition.set_defaults(func=_cmd_task_transition)
+    task_complete = task_sub.add_parser("complete")
+    task_complete.add_argument("--home", type=Path, required=True)
+    task_complete.add_argument("--task", required=True)
+    task_complete.add_argument("--expect-revision", type=int, required=True)
+    task_complete.set_defaults(func=_cmd_task_complete)
+
+    artifact = subparsers.add_parser("artifact", help="Record a phase artifact.")
+    artifact_sub = artifact.add_subparsers(dest="artifact_command", required=True)
+    artifact_record = artifact_sub.add_parser("record")
+    artifact_record.add_argument("--home", type=Path, required=True)
+    artifact_record.add_argument("--task", required=True)
+    artifact_record.add_argument("--type", required=True)
+    artifact_record.add_argument("--path", required=True)
+    artifact_record.add_argument("--hash", dest="content_hash")
+    artifact_record.set_defaults(func=_cmd_artifact_record)
+
+    evidence = subparsers.add_parser("evidence", help="Record revision-bound verification evidence.")
+    evidence_sub = evidence.add_subparsers(dest="evidence_command", required=True)
+    evidence_record = evidence_sub.add_parser("record")
+    evidence_record.add_argument("--home", type=Path, required=True)
+    evidence_record.add_argument("--task", required=True)
+    evidence_record.add_argument("--type", required=True)
+    evidence_record.add_argument("--command", dest="evidence_command_text")
+    evidence_record.add_argument("--exit-code", type=int)
+    evidence_record.add_argument("--tests-collected", type=int)
+    evidence_record.add_argument("--tests-passed", type=int)
+    evidence_record.add_argument("--output-hash")
+    evidence_record.set_defaults(func=_cmd_evidence_record)
 
     lite = subparsers.add_parser("lite", help="Preview or explicitly submit work to Harness Lite.")
     lite_sub = lite.add_subparsers(dest="lite_command", required=True)
@@ -136,6 +190,135 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
         for check in report.checks:
             print(f"[{check.status}] {check.code}: {check.message}")
     return 0 if report.ok else 1
+
+
+def _cmd_classification_confirm(args: argparse.Namespace) -> int:
+    contract = ContractSnapshot.load()
+    try:
+        task = HarnessDatabase(args.home).confirm_classification(
+            args.task,
+            tier=args.tier,
+            kind=args.kind,
+            pipeline=contract.pipeline(args.tier, args.kind),
+            source=args.source,
+            confidence=args.confidence,
+        )
+    except StateTransitionError as exc:
+        print(f"classification confirmation failed: {exc}")
+        return 2
+    _sync_task_projection(args.home, task, classification_source=args.source, confidence=args.confidence)
+    print(f"classification confirmed: {args.tier}-{args.kind} ({args.source}, confidence={args.confidence:.2f})")
+    return 0
+
+
+def _cmd_artifact_record(args: argparse.Namespace) -> int:
+    try:
+        task = HarnessDatabase(args.home).record_artifact(
+            args.task, args.type, args.path, args.content_hash
+        )
+    except StateTransitionError as exc:
+        print(f"artifact record failed: {exc}")
+        return 2
+    _sync_task_projection(args.home, task)
+    print(json.dumps(task, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _cmd_task_transition(args: argparse.Namespace) -> int:
+    try:
+        task = HarnessDatabase(args.home).transition(
+            args.task, args.to, expected_revision=args.expect_revision
+        )
+    except StateTransitionError as exc:
+        print(f"task transition failed: {exc}")
+        return 2
+    _sync_task_projection(args.home, task)
+    print(json.dumps(task, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _cmd_evidence_record(args: argparse.Namespace) -> int:
+    try:
+        task = HarnessDatabase(args.home).record_evidence(
+            args.task,
+            evidence_type=args.type,
+            command=args.evidence_command_text,
+            exit_code=args.exit_code,
+            tests_collected=args.tests_collected,
+            tests_passed=args.tests_passed,
+            output_hash=args.output_hash,
+        )
+    except StateTransitionError as exc:
+        print(f"evidence record failed: {exc}")
+        return 2
+    _sync_task_projection(args.home, task)
+    print(json.dumps(task, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _cmd_task_complete(args: argparse.Namespace) -> int:
+    try:
+        task = HarnessDatabase(args.home).complete(args.task, expected_revision=args.expect_revision)
+    except StateTransitionError as exc:
+        print(f"task completion failed: {exc}")
+        return 2
+    _sync_task_projection(args.home, task)
+    print(json.dumps(task, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _sync_task_projection(
+    home: Path,
+    task: dict,
+    *,
+    classification_source: str | None = None,
+    confidence: float | None = None,
+) -> None:
+    candidates = [home / "state.json"]
+    sessions = home / "sessions"
+    if sessions.exists():
+        candidates.extend(sorted(sessions.glob("*/state.json")))
+    for state_path in candidates:
+        if not state_path.exists():
+            continue
+        try:
+            projection = json.loads(state_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if projection.get("task_id") != task["task_id"]:
+            continue
+        projection.update(
+            {
+                "tier": task["tier"],
+                "kind": task["kind"],
+                "pipeline": task["pipeline"],
+                "current_step": task["phase"],
+                "status": task["status"],
+                "revision": task["revision"],
+                "code_revision": task["code_revision"],
+                "owner_epoch": task["owner_epoch"],
+                "pending_gate": task["pending_gate"],
+                "verified": task["verified"],
+            }
+        )
+        if classification_source:
+            classification = projection.setdefault("classification", {})
+            classification.update(
+                {
+                    "tier": task["tier"],
+                    "kind": task["kind"],
+                    "pipeline": task["pipeline"],
+                    "source": classification_source,
+                    "confidence": confidence,
+                }
+            )
+        store = HarnessStateStore(
+            state_path.parent,
+            scope=projection.get("scope"),
+            memory_home=home,
+        )
+        store.save(projection)
+        return
 
 
 def _lite_envelope(args: argparse.Namespace, *, max_cost_usd: float) -> dict | None:

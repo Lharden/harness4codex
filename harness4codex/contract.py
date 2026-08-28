@@ -1,0 +1,108 @@
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+from typing import Any
+
+
+class ContractSnapshotError(ValueError):
+    pass
+
+
+CODEX_ALIASES = {
+    "C0": ("L0", "question"),
+    "C1": ("L1", "bug"),
+    "C2": ("L1", "feature"),
+    "C3": ("L2", "architecture"),
+    "CR": ("L1", "review"),
+    "DOCS": ("L1", "docs"),
+}
+
+KIND_ALIASES = {"api-docs": "docs", "documentation": "docs", "escalated-edit": "bug"}
+
+
+class ContractSnapshot:
+    def __init__(self, root: Path):
+        self.root = root.resolve()
+        self.capabilities = self._load("capabilities.json")
+        self.pipelines = self._load("pipelines.json")
+        self.lock = self._load("contract.lock.json")
+
+    @classmethod
+    def load(cls) -> "ContractSnapshot":
+        return cls(Path(__file__).parent / "_contract")
+
+    @property
+    def version(self) -> str:
+        return str(self.capabilities["contract_version"])
+
+    @property
+    def required_capabilities(self) -> tuple[str, ...]:
+        return tuple(
+            str(item["id"])
+            for item in self.capabilities.get("capabilities", [])
+            if isinstance(item, dict) and item.get("level") == "required"
+        )
+
+    def normalize(self, level: str, kind: str | None = None) -> dict[str, str]:
+        raw_level = str(level).strip().upper()
+        raw_kind = str(kind or "").strip().lower()
+        normalized_kind = KIND_ALIASES.get(raw_kind, raw_kind)
+        if raw_level in CODEX_ALIASES:
+            tier, default_kind = CODEX_ALIASES[raw_level]
+            return {"tier": tier, "kind": normalized_kind or default_kind}
+        if "-" in raw_level:
+            tier, compound_kind = raw_level.split("-", 1)
+            if tier in {"L0", "L1", "L2"}:
+                return {"tier": tier, "kind": KIND_ALIASES.get(compound_kind.lower(), compound_kind.lower())}
+        if raw_level in {"L0", "L1", "L2"} and normalized_kind:
+            return {"tier": raw_level, "kind": normalized_kind}
+        raise ContractSnapshotError(f"unsupported classification: {level!r}/{kind!r}")
+
+    def pipeline(self, tier: str, kind: str) -> list[str]:
+        key = f"{tier.strip().upper()}-{kind.strip().lower()}"
+        value = (self.pipelines.get("pipelines") or {}).get(key)
+        if not isinstance(value, list) or not all(isinstance(step, str) for step in value):
+            raise ContractSnapshotError(f"undefined contract pipeline: {key}")
+        return value.copy()
+
+    def verify_lock(self) -> bool:
+        expected_files = self.lock.get("files")
+        if not isinstance(expected_files, list):
+            return False
+        digest = hashlib.sha256()
+        for relative in expected_files:
+            path = self.root / str(relative)
+            if not path.is_file():
+                return False
+            canonical = Path(str(relative)).as_posix()
+            digest.update(canonical.encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+        return digest.hexdigest() == self.lock.get("sha256") and self.lock.get("contract_version") == self.version
+
+    def capability_report(self, evidence: dict[str, list[str]]) -> dict[str, Any]:
+        return {
+            "contract_version": self.version,
+            "adapter": "harness4codex",
+            "capabilities": {
+                capability: {
+                    "status": "native" if capability in evidence else "degraded",
+                    "evidence": evidence.get(capability, ["missing conformance evidence"]),
+                }
+                for capability in self.required_capabilities
+            },
+        }
+
+    def _load(self, relative: str) -> dict[str, Any]:
+        path = self.root / relative
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ContractSnapshotError(f"invalid contract snapshot file {path}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContractSnapshotError(f"contract snapshot file must be an object: {path}")
+        return value
+

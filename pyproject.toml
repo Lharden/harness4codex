@@ -11,6 +11,9 @@ requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Lharden" }]
 
+[tool.setuptools.package-data]
+harness4codex = ["_contract/**/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q -p no:cacheprovider --basetemp .pytest_tmp_codex"
