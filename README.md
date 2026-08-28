@@ -6,6 +6,7 @@ Harness4Codex is a contract-backed Codex workflow supervisor. It combines full-l
 
 - Deterministic classification with semantic confirmation and human override, normalized to `L0/L1/L2 + kind` while preserving legacy Codex labels.
 - SQLite WAL state under `~/.codex/harness`, isolated by session, repository and worktree, with revision CAS, leases and fencing.
+- Active scoped pipelines auto-abandon after `HARNESS4CODEX_PIPELINE_TTL_H` hours (default `24`), releasing the scope and recording a transactional expiry event.
 - Context injection that asks Codex to use `codex-harness-workflow`.
 - SDD v3 pipelines with light/full specs, adversarial review, design docs, plan validation, TDD and item-by-item spec verification.
 - Human approval gates for specs, plans, clarifications, branches and bounded escalation.
@@ -91,6 +92,10 @@ python -m harness4codex branch list --home "$HOME\.codex\harness" --task TASK
 python -m harness4codex doctor --json
 python -m harness4codex lite preview "Implementar CSV" --level C2
 ```
+
+`branch open` reads its approved seed file and emits the locally supported
+`codex fork [SESSION_ID|--last] [PROMPT]` argument vector. Pass `--session` to
+fork an exact Codex session; otherwise the most recent session is used.
 
 Harness Lite submission is deliberately separate from preview:
 

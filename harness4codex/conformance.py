@@ -12,7 +12,7 @@ CAPABILITY_EVIDENCE: dict[str, list[str]] = {
     "classification.human-override": ["harness4codex/cli.py#_cmd_classification_confirm", "tests/test_cli.py"],
     "state.session-worktree-isolation": ["harness4codex/state.py#store_for_payload", "tests/test_state.py"],
     "state.transactional-fsm": ["harness4codex/state_db.py#HarnessDatabase", "tests/test_transactional_state.py"],
-    "state.ttl-signals": ["harness4codex/state_db.py#acquire_lease", "tests/test_transactional_state.py"],
+    "state.ttl-signals": ["harness4codex/state_db.py#expire_stale_task", "tests/test_transactional_state.py"],
     "workflow.sdd-v3": ["skills/codex-harness-workflow/SKILL.md", "tests/test_packaging.py"],
     "workflow.human-gates": ["harness4codex/state_db.py#open_gate", "tests/test_transactional_state.py"],
     "workflow.adversarial-agents": ["harness4codex/agent_workflows.py#WorkflowCensus", "skills/grill-me/SKILL.md"],
@@ -41,6 +41,7 @@ def build_capability_report(repository: str | Path | None = None) -> dict[str, A
             evidence[capability] = records
     report = snapshot.capability_report(evidence)
     report["snapshot_lock_valid"] = snapshot.verify_lock()
+    report["pipeline_fingerprint"] = snapshot.pipeline_fingerprint()
     report["conformant"] = report["snapshot_lock_valid"] and all(
         item["status"] in {"native", "equivalent"} for item in report["capabilities"].values()
     )

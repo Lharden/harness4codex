@@ -96,6 +96,7 @@ def _build_parser() -> argparse.ArgumentParser:
     branch_open.add_argument("--home", type=Path, required=True)
     branch_open.add_argument("--branch", required=True)
     branch_open.add_argument("--seed", type=Path, required=True)
+    branch_open.add_argument("--session", help="Codex session id to fork; defaults to --last.")
     branch_open.set_defaults(func=_cmd_branch_open)
     branch_list = branch_sub.add_parser("list")
     branch_list.add_argument("--home", type=Path, required=True)
@@ -318,7 +319,13 @@ def _cmd_branch_approve(args: argparse.Namespace) -> int:
 
 
 def _cmd_branch_open(args: argparse.Namespace) -> int:
-    return _run_branch(lambda: _branch_keeper(args.home).open(args.branch, seed_path=args.seed))
+    return _run_branch(
+        lambda: _branch_keeper(args.home).open(
+            args.branch,
+            seed_path=args.seed,
+            session_id=args.session,
+        )
+    )
 
 
 def _cmd_branch_list(args: argparse.Namespace) -> int:

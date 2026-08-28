@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from harness4codex.contract import ContractSnapshot
@@ -195,3 +197,18 @@ def test_active_lease_cannot_be_stolen_by_another_owner(tmp_path):
 
     with pytest.raises(StateTransitionError, match="active lease"):
         db.acquire_lease("scope-a", "owner-b", ttl_seconds=10, now=105)
+
+
+def test_stale_task_ttl_abandons_pipeline_and_releases_scope(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    task = _start(db)
+    started = datetime.fromisoformat(task["started_at"]).timestamp()
+
+    assert db.expire_stale_task("scope-a", ttl_seconds=3600, now=started + 3599) is None
+
+    expired = db.expire_stale_task("scope-a", ttl_seconds=3600, now=started + 3601)
+
+    assert expired is not None
+    assert expired["task_id"] == task["task_id"]
+    assert expired["status"] == "abandoned"
+    assert db.current_task("scope-a") is None

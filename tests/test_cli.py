@@ -208,9 +208,11 @@ def test_branch_cli_offer_approve_open_and_list(tmp_path, capsys):
     ]) == 0
     offered = db.list_branches(task["task_id"])[0]
     assert run(["branch", "approve", "--home", str(tmp_path), "--branch", offered["branch_id"]]) == 0
+    seed = tmp_path / "seed.md"
+    seed.write_text("Investigate graph retrieval", encoding="utf-8")
     assert run([
         "branch", "open", "--home", str(tmp_path), "--branch", offered["branch_id"],
-        "--seed", "seed.md",
+        "--seed", str(seed),
     ]) == 0
     assert run(["branch", "list", "--home", str(tmp_path), "--task", task["task_id"]]) == 0
     output = capsys.readouterr().out

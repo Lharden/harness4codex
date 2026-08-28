@@ -20,8 +20,8 @@
     "semantic_hash": ""
   },
   "harness4codex/cli.py": {
-    "mtime": 1787956637.6786058,
-    "ast_hash": "0d6a80091f98ad54aab8e2d77bba4bf4",
+    "mtime": 1787958552.7348952,
+    "ast_hash": "796a12437ca65919b143769c288bd21d",
     "semantic_hash": ""
   },
   "harness4codex/diagnostics.py": {
@@ -40,8 +40,8 @@
     "semantic_hash": ""
   },
   "harness4codex/hook.py": {
-    "mtime": 1787955050.7714553,
-    "ast_hash": "59595a13e909983a65d81dbadec21f66",
+    "mtime": 1787958552.7348952,
+    "ast_hash": "e4119cc464fce05abaf6f7de20cde756",
     "semantic_hash": ""
   },
   "harness4codex/memory.py": {
@@ -60,8 +60,8 @@
     "semantic_hash": ""
   },
   "harness4codex/state.py": {
-    "mtime": 1787954994.3441403,
-    "ast_hash": "9a0df58155701e01d4ed3b7b55dce737",
+    "mtime": 1787958552.734032,
+    "ast_hash": "f3f8e3017beb19cbd41fc729b10b22ce",
     "semantic_hash": ""
   },
   "harness4codex/workflow.py": {
@@ -110,8 +110,8 @@
     "semantic_hash": ""
   },
   "tests/test_cli.py": {
-    "mtime": 1787956569.8117228,
-    "ast_hash": "2c6984a61d7e850cb0fed34b81dc5ea3",
+    "mtime": 1787958482.3369925,
+    "ast_hash": "babd74f1e98479516bd592ca96e264aa",
     "semantic_hash": ""
   },
   "tests/test_diagnostics.py": {
@@ -130,8 +130,8 @@
     "semantic_hash": ""
   },
   "tests/test_hook.py": {
-    "mtime": 1787954892.8950508,
-    "ast_hash": "974ebcd4845d558cad5b50c57cab9113",
+    "mtime": 1787958482.3339484,
+    "ast_hash": "d0db6bd7ae03a758c737321057b43fc1",
     "semantic_hash": ""
   },
   "tests/test_install.py": {
@@ -175,8 +175,8 @@
     "semantic_hash": ""
   },
   "README.md": {
-    "mtime": 1787956780.4004953,
-    "ast_hash": "48fbb9eadae27595c11b7e140718ac82",
+    "mtime": 1787958749.2189646,
+    "ast_hash": "52bbeda01b21d82b0dedbaa7151a5548",
     "semantic_hash": ""
   },
   "WORKFLOW.md": {
@@ -275,8 +275,8 @@
     "semantic_hash": ""
   },
   "harness4codex/branches.py": {
-    "mtime": 1787956334.2301364,
-    "ast_hash": "67c4885fc8bf3751f33079ba4cf68366",
+    "mtime": 1787958552.7348952,
+    "ast_hash": "e2e64edbf3e0025600ae2dfaf93e9548",
     "semantic_hash": ""
   },
   "harness4codex/command_policy.py": {
@@ -285,13 +285,13 @@
     "semantic_hash": ""
   },
   "harness4codex/conformance.py": {
-    "mtime": 1787956532.5560806,
-    "ast_hash": "8e5613162f91658c30b398f9f86fa8e2",
+    "mtime": 1787958552.7348952,
+    "ast_hash": "bd7b0a57d20e73fa0ec5b63c3d5bea86",
     "semantic_hash": ""
   },
   "harness4codex/contract.py": {
-    "mtime": 1787954809.3503442,
-    "ast_hash": "9aeac6d31995115cb5ebe72fee14a96e",
+    "mtime": 1787958117.1079085,
+    "ast_hash": "b2ec8a95051331a874adb431e820069a",
     "semantic_hash": ""
   },
   "harness4codex/graph_context.py": {
@@ -305,8 +305,8 @@
     "semantic_hash": ""
   },
   "harness4codex/state_db.py": {
-    "mtime": 1787956315.1355758,
-    "ast_hash": "301bec49e1e03c78010ede3b7b5e2a9e",
+    "mtime": 1787958552.7267091,
+    "ast_hash": "b9decb7a5ce00fda3ad6620c0e7cc7a5",
     "semantic_hash": ""
   },
   "harness4codex/wiki.py": {
@@ -325,8 +325,8 @@
     "semantic_hash": ""
   },
   "tests/test_branches.py": {
-    "mtime": 1787956107.0452216,
-    "ast_hash": "aec6396731bd6e46aa0b1e230e540301",
+    "mtime": 1787958482.3369925,
+    "ast_hash": "3e0e7995d06415ab2f7755414ed357d5",
     "semantic_hash": ""
   },
   "tests/test_command_policy.py": {
@@ -355,8 +355,8 @@
     "semantic_hash": ""
   },
   "tests/test_transactional_state.py": {
-    "mtime": 1787955366.7635431,
-    "ast_hash": "d172e97deca7f5a8f0569a1321fd179f",
+    "mtime": 1787958482.3339484,
+    "ast_hash": "828114061e09ada4e6582eeb8dcee9ab",
     "semantic_hash": ""
   },
   "tests/test_wiki.py": {

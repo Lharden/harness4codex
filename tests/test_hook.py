@@ -1,4 +1,5 @@
 import json
+import sqlite3
 
 from harness4codex.hook import _decode_payload, _extract_exit_code, handle_payload
 from harness4codex.memory import HarnessMemoryStore
@@ -58,6 +59,29 @@ def test_session_start_resumes_active_pipeline(tmp_path):
     output = handle_payload({"hook_event_name": "SessionStart", "source": "resume"}, harness_home=tmp_path)
 
     assert "Retome o pipeline" in _decode(output)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_session_start_expires_stale_pipeline_before_resuming(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija bug de login."},
+        harness_home=tmp_path,
+    )
+    state_path = tmp_path / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["started_at"] = "2000-01-01T00:00:00+00:00"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    with sqlite3.connect(tmp_path / "harness.db") as connection:
+        connection.execute(
+            "UPDATE tasks SET started_at = ? WHERE task_id = ?",
+            ("2000-01-01T00:00:00+00:00", state["task_id"]),
+        )
+
+    output = handle_payload({"hook_event_name": "SessionStart", "source": "resume"}, harness_home=tmp_path)
+
+    assert output == ""
+    expired = HarnessStateStore(tmp_path).load()
+    assert expired["status"] == "idle"
+    assert expired["task_id"] is None
 
 
 def test_parallel_sessions_do_not_continue_each_other(tmp_path):

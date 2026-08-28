@@ -20,6 +20,9 @@ class HarnessStateError(RuntimeError):
     pass
 
 
+DEFAULT_PIPELINE_TTL_HOURS = 24.0
+
+
 def default_harness_home() -> Path:
     configured = os.environ.get("HARNESS4CODEX_HOME")
     if configured:
@@ -161,6 +164,39 @@ class HarnessStateStore:
     def save(self, state: dict) -> dict:
         with self._lock():
             return self._write_unlocked(state)
+
+    def expire_stale_pipeline(
+        self,
+        *,
+        ttl_seconds: float | None = None,
+        now: float | None = None,
+    ) -> str | None:
+        """Expire a scoped pipeline before lifecycle hooks resume or continue it."""
+        if ttl_seconds is None:
+            configured = os.environ.get("HARNESS4CODEX_PIPELINE_TTL_H")
+            try:
+                hours = float(configured) if configured else DEFAULT_PIPELINE_TTL_HOURS
+            except ValueError:
+                hours = DEFAULT_PIPELINE_TTL_HOURS
+            if hours <= 0:
+                hours = DEFAULT_PIPELINE_TTL_HOURS
+            ttl_seconds = hours * 3600
+        with self._lock():
+            state = self._read_unlocked()
+            if state.get("status") not in {"active", "verified", "awaiting_gate"} or not state.get("pipeline"):
+                return None
+            expired = self.database.expire_stale_task(
+                self.scope or "legacy",
+                ttl_seconds=ttl_seconds,
+                now=now,
+            )
+            if expired is None:
+                return None
+            idle = default_state()
+            idle["last_expired_task"] = expired["task_id"]
+            idle["expiry_reason"] = f"pipeline_ttl_{float(ttl_seconds):g}s"
+            self._write_unlocked(idle)
+            return str(expired["task_id"])
 
     def start_task(self, classification: Classification, prompt: str) -> dict:
         with self._lock():

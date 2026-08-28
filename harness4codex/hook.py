@@ -287,6 +287,7 @@ def _record_memory(store: HarnessStateStore, event: str, text: str, metadata: di
 
 
 def _handle_session_start(event: str, store: HarnessStateStore) -> str:
+    store.expire_stale_pipeline()
     state = store.load()
     if state.get("status") in {"active", "verified"} and state.get("pipeline"):
         return _context_output(event, _task_context(state, "Retome o pipeline ativo."))
@@ -296,6 +297,7 @@ def _handle_session_start(event: str, store: HarnessStateStore) -> str:
 def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
     prompt = str(payload.get("prompt") or payload.get("user_prompt") or payload.get("message") or "")
     classification = classify_prompt(prompt)
+    store.expire_stale_pipeline()
     current = store.load()
     if current.get("status") == "active" and not classification.is_task_switch:
         store.log_event(event, {"continued": current.get("task_id"), "prompt": prompt})

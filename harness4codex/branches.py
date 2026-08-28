@@ -61,7 +61,13 @@ class BranchKeeper:
         except StateTransitionError as exc:
             raise BranchPolicyError(str(exc)) from exc
 
-    def open(self, branch_id: str, *, seed_path: str | Path) -> dict[str, Any]:
+    def open(
+        self,
+        branch_id: str,
+        *,
+        seed_path: str | Path,
+        session_id: str | None = None,
+    ) -> dict[str, Any]:
         branch = self.database.branch(branch_id)
         if not branch.get("approved_at"):
             raise BranchPolicyError("branch-open approval is required")
@@ -70,8 +76,16 @@ class BranchKeeper:
         )
         if open_count >= self.max_open:
             raise BranchPolicyError("open branch limit reached")
-        updated = self.database.update_branch(branch_id, status="open", seed_path=str(seed_path))
-        updated["launch_argv"] = ["codex", "fork", "--message-file", str(seed_path)]
+        seed = Path(seed_path)
+        try:
+            prompt = seed.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise BranchPolicyError(f"branch seed could not be read: {seed}") from exc
+        if not prompt:
+            raise BranchPolicyError("branch seed is empty")
+        updated = self.database.update_branch(branch_id, status="open", seed_path=str(seed))
+        fork_target = session_id.strip() if session_id and session_id.strip() else "--last"
+        updated["launch_argv"] = ["codex", "fork", fork_target, prompt]
         return updated
 
     def recall(self, branch_id: str) -> dict[str, Any]:

@@ -67,6 +67,15 @@ class ContractSnapshot:
             raise ContractSnapshotError(f"undefined contract pipeline: {key}")
         return value.copy()
 
+    def pipeline_fingerprint(self) -> str:
+        canonical = json.dumps(
+            self.pipelines.get("pipelines") or {},
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
     def verify_lock(self) -> bool:
         expected_files = self.lock.get("files")
         if not isinstance(expected_files, list):
@@ -105,4 +114,3 @@ class ContractSnapshot:
         if not isinstance(value, dict):
             raise ContractSnapshotError(f"contract snapshot file must be an object: {path}")
         return value
-
