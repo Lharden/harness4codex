@@ -1,16 +1,16 @@
 # Graph Report - equipotence-v1  (2026-08-28)
 
 ## Corpus Check
-- 90 files · ~30,310 words
+- 90 files · ~30,367 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1040 nodes · 1898 edges · 89 communities (65 shown, 24 thin omitted)
+- 1041 nodes · 1901 edges · 89 communities (65 shown, 24 thin omitted)
 - Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 86 edges (avg confidence: 0.66)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `fc6909d2`
+- Built from commit: `c3d4bd3d`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -103,7 +103,7 @@
 - science_context
 
 ## God Nodes (most connected - your core abstractions)
-1. `HarnessDatabase` - 73 edges
+1. `HarnessDatabase` - 74 edges
 2. `HarnessStateStore` - 62 edges
 3. `handle_payload()` - 35 edges
 4. `_build_parser()` - 29 edges
@@ -149,7 +149,7 @@ Nodes (13): ConsolidationReport, HarnessMemoryStore, MemoryConsolidator, Any, Co
 
 ### Community 4 - "load_workflow"
 Cohesion: 0.09
-Nodes (34): BranchKeeper, BranchPolicyError, _jaccard(), _normalize(), Any, Path, ValueError, _slug() (+26 more)
+Nodes (35): BranchKeeper, BranchPolicyError, _jaccard(), _normalize(), Any, Path, ValueError, _slug() (+27 more)
 
 ### Community 5 - "install"
 Cohesion: 0.22
@@ -205,7 +205,7 @@ Nodes (7): _indent_of(), _parse_block(), _parse_limited_yaml(), _parse_scalar(),
 
 ### Community 18 - "Symphony Memory Workflow Implementation Plan"
 Cohesion: 0.14
-Nodes (13): 0. Mandato, 17. Fase 12 — Otimização de hot paths, 1. Capacidades atuais que devem ser preservadas, 20. Critérios finais de aceitação, 21. Relatório final obrigatório, 22. Ordem resumida, 3.1 Preparação, 3.2 Proibições (+5 more)
+Nodes (13): 0. Mandato, 17. Fase 12 — Otimização de hot paths, 1. Capacidades atuais que devem ser preservadas, 20. Critérios finais de aceitação, 21. Relatório final obrigatório, 22. Ordem resumida, 4.1 Inventário, 4.2 Baseline (+5 more)
 
 ### Community 19 - "Symphony Memory Workflow Design"
 Cohesion: 0.14
@@ -373,7 +373,7 @@ Nodes (4): 2.1 Hard constraints, 2.2 Métricas otimizáveis, 2.3 Função, 2. Pr
 
 ### Community 63 - "4. Artefatos obrigatórios antes da reforma"
 Cohesion: 0.50
-Nodes (4): 4.1 Inventário, 4.2 Baseline, 4.3 Replays, 4. Artefatos obrigatórios antes da reforma
+Nodes (4): 3.1 Preparação, 3.2 Proibições, 3.3 Stop conditions, 3. Regras de execução
 
 ### Community 88 - "science_context"
 Cohesion: 0.52
@@ -388,9 +388,9 @@ Nodes (5): _normalize(), science_context(), wants_science_evidence(), test_ordin
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `HarnessStateStore` connect `HarnessStateStore` to `hook.py`, `inspect_command`, `load_workflow`, `classify_prompt`?**
-  _High betweenness centrality (0.040) - this node is a cross-community bridge._
+  _High betweenness centrality (0.042) - this node is a cross-community bridge._
 - **Why does `HarnessDatabase` connect `load_workflow` to `HarnessStateStore`, `inspect_command`?**
-  _High betweenness centrality (0.037) - this node is a cross-community bridge._
+  _High betweenness centrality (0.038) - this node is a cross-community bridge._
 - **Why does `HarnessMemoryStore` connect `HarnessMemoryStore` to `hook.py`, `HarnessStateStore`, `inspect_command`?**
   _High betweenness centrality (0.022) - this node is a cross-community bridge._
 - **Are the 4 inferred relationships involving `HarnessDatabase` (e.g. with `BranchKeeper` and `BranchPolicyError`) actually correct?**

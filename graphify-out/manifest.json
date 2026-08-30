@@ -305,8 +305,8 @@
     "semantic_hash": ""
   },
   "harness4codex/state_db.py": {
-    "mtime": 1787958552.7267091,
-    "ast_hash": "b9decb7a5ce00fda3ad6620c0e7cc7a5",
+    "mtime": 1787959170.3796165,
+    "ast_hash": "d2359a2ec303804a8a1a461c24182035",
     "semantic_hash": ""
   },
   "harness4codex/wiki.py": {
@@ -355,8 +355,8 @@
     "semantic_hash": ""
   },
   "tests/test_transactional_state.py": {
-    "mtime": 1787958482.3339484,
-    "ast_hash": "828114061e09ada4e6582eeb8dcee9ab",
+    "mtime": 1787959142.997563,
+    "ast_hash": "6d9475ce5dc333c039c198a97c83be08",
     "semantic_hash": ""
   },
   "tests/test_wiki.py": {

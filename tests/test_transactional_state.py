@@ -212,3 +212,15 @@ def test_stale_task_ttl_abandons_pipeline_and_releases_scope(tmp_path):
     assert expired["task_id"] == task["task_id"]
     assert expired["status"] == "abandoned"
     assert db.current_task("scope-a") is None
+
+
+def test_stale_task_ttl_cancels_a_pending_human_gate(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    task = db.open_gate(_start(db)["task_id"], "escalation")
+    started = datetime.fromisoformat(task["started_at"]).timestamp()
+
+    expired = db.expire_stale_task("scope-a", ttl_seconds=1, now=started + 2)
+
+    assert expired is not None
+    assert expired["status"] == "abandoned"
+    assert expired["pending_gate"] is None
