@@ -6,12 +6,12 @@ Harness4Codex is a contract-backed Codex workflow supervisor. It combines full-l
 
 - Deterministic classification with semantic confirmation and human override, normalized to `L0/L1/L2 + kind` while preserving legacy Codex labels.
 - SQLite WAL state under `~/.codex/harness`, isolated by session, repository and worktree, with revision CAS, leases and fencing.
-- Active scoped pipelines auto-abandon after `HARNESS4CODEX_PIPELINE_TTL_H` hours (default `24`), releasing the scope and recording a transactional expiry event.
+- Active scoped pipelines auto-abandon after `HARNESS4CODEX_PIPELINE_TTL_H` hours (default `24`) through a task-ID compare-and-swap, releasing only the stale task that was inspected.
 - Context injection that asks Codex to use `codex-harness-workflow`.
 - SDD v3 pipelines with light/full specs, adversarial review, design docs, plan validation, TDD and item-by-item spec verification.
-- Human approval gates for specs, plans, clarifications, branches and bounded escalation.
+- Human approval gates for specs, plans, clarifications, branches and bounded escalation; a reply to a pending gate resumes that task instead of being reclassified.
 - Parsed command policy for destructive Git operations and Codex plugin mutations.
-- Revision-bound verification evidence and bounded continuation on `Stop`.
+- Revision-bound verification evidence and bounded continuation on `Stop`; shell mutations invalidate prior evidence and only actual test-runner commands create verification evidence.
 - Repo-local `WORKFLOW.md` discovery for versioned workflow policy.
 - FTS5 operational memory, cited AI-Brain wiki search and reversible secondary-memory compression.
 - Graphify freshness/provenance artifacts and degraded structural fallback.
@@ -45,7 +45,12 @@ The compatibility installer:
 1. Copies the plugin to `~/.codex/plugins/harness4codex`.
 2. Installs the packaged Harness4Codex skills.
 3. Enables `[features] hooks = true`.
-4. Merges Harness4Codex entries into `~/.codex/hooks.json`.
+4. Selects exactly one hook registration path: native plugin discovery when a
+   `harness4codex@...` plugin is enabled, otherwise `~/.codex/hooks.json`.
+
+In native-plugin mode it removes stale global Harness4Codex commands while
+preserving unrelated hooks, so repeated installs remain idempotent and each event is
+handled once. The JSON result exposes the selected `hook_mode`.
 
 Start a new Codex session after installing so the hook configuration is loaded.
 

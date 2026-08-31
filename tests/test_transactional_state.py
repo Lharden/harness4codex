@@ -45,6 +45,17 @@ def test_starting_a_new_task_abandons_the_previous_task_in_same_scope(tmp_path):
     assert db.current_task("scope-a")["task_id"] == second["task_id"]
 
 
+def test_starting_new_task_cancels_pending_gates_on_abandoned_task(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    first = db.open_gate(_start(db)["task_id"], "escalation")
+
+    _start(db)
+
+    abandoned = db.task(first["task_id"])
+    assert abandoned["status"] == "abandoned"
+    assert abandoned["pending_gate"] is None
+
+
 def test_transition_requires_phase_artifact_and_rejects_skips(tmp_path):
     db = HarnessDatabase(tmp_path)
     task = _start(db)
@@ -224,3 +235,20 @@ def test_stale_task_ttl_cancels_a_pending_human_gate(tmp_path):
     assert expired is not None
     assert expired["status"] == "abandoned"
     assert expired["pending_gate"] is None
+
+
+def test_ttl_compare_and_set_does_not_expire_a_replacement_task(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    old = _start(db)
+    replacement = _start(db)
+    started = datetime.fromisoformat(replacement["started_at"]).timestamp()
+
+    expired = db.expire_stale_task(
+        "scope-a",
+        ttl_seconds=1,
+        now=started + 2,
+        expected_task_id=old["task_id"],
+    )
+
+    assert expired is None
+    assert db.current_task("scope-a")["task_id"] == replacement["task_id"]

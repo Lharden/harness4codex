@@ -189,6 +189,7 @@ class HarnessStateStore:
                 self.scope or "legacy",
                 ttl_seconds=ttl_seconds,
                 now=now,
+                expected_task_id=str(state.get("task_id") or ""),
             )
             if expired is None:
                 return None
@@ -272,6 +273,18 @@ class HarnessStateStore:
                 )
             if transactional is not None:
                 self._merge_transactional(state, transactional)
+            return self._write_unlocked(state)
+
+    def record_change_marker(self, marker: str) -> dict:
+        """Invalidate revision-bound evidence without affecting file-count promotion."""
+        with self._lock():
+            state = self._read_unlocked()
+            if not state.get("task_id"):
+                return state
+            state["verified"] = False
+            state["last_verification"] = None
+            transactional = self.database.touch_file(state["task_id"], f"<{marker}>")
+            self._merge_transactional(state, transactional)
             return self._write_unlocked(state)
 
     def mark_verified(self, command: str) -> dict:

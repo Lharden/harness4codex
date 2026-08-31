@@ -123,6 +123,7 @@ class HarnessDatabase:
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     task_id TEXT NOT NULL REFERENCES tasks(task_id),
                     gate_type TEXT NOT NULL,
+                    subject_id TEXT,
                     status TEXT NOT NULL,
                     decision TEXT,
                     created_at TEXT NOT NULL,
@@ -171,6 +172,16 @@ class HarnessDatabase:
                 );
                 """
             )
+            gate_columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(gates)").fetchall()
+            }
+            if "subject_id" not in gate_columns:
+                connection.execute("ALTER TABLE gates ADD COLUMN subject_id TEXT")
+            connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS one_pending_gate_per_subject "
+                "ON gates(task_id, gate_type, subject_id) "
+                "WHERE status = 'pending' AND subject_id IS NOT NULL"
+            )
 
     def start_task(
         self,
@@ -188,6 +199,13 @@ class HarnessDatabase:
         status = "active" if pipeline else "done"
         with self._write() as connection:
             connection.execute("INSERT OR IGNORE INTO scopes(scope_id, created_at) VALUES (?, ?)", (scope_id, now))
+            connection.execute(
+                "UPDATE gates SET status = 'cancelled', decision = 'task-switch', resolved_at = ? "
+                "WHERE status = 'pending' AND task_id IN ("
+                "SELECT task_id FROM tasks WHERE scope_id = ? "
+                "AND status IN ('suggested', 'active', 'awaiting_gate', 'verified'))",
+                (now, scope_id),
+            )
             connection.execute(
                 "UPDATE tasks SET status = 'abandoned', revision = revision + 1, updated_at = ? "
                 "WHERE scope_id = ? AND status IN ('suggested', 'active', 'awaiting_gate', 'verified')",
@@ -300,10 +318,16 @@ class HarnessDatabase:
             if row is None:
                 raise StateTransitionError(f"task not found: {task_id}")
             gate = connection.execute(
-                "SELECT gate_type FROM gates WHERE task_id = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+                "SELECT gate_type, subject_id FROM gates WHERE task_id = ? AND status = 'pending' "
+                "ORDER BY id DESC LIMIT 1",
                 (task_id,),
             ).fetchone()
-        return self._render_task(row, gate["gate_type"] if gate else None)
+        pending_gate = None
+        if gate:
+            pending_gate = str(gate["gate_type"])
+            if gate["subject_id"]:
+                pending_gate += f":{gate['subject_id']}"
+        return self._render_task(row, pending_gate)
 
     def current_task(self, scope_id: str) -> dict[str, Any] | None:
         placeholders = ",".join("?" for _ in ACTIVE_STATUSES)
@@ -321,6 +345,7 @@ class HarnessDatabase:
         *,
         ttl_seconds: float,
         now: float | None = None,
+        expected_task_id: str | None = None,
     ) -> dict[str, Any] | None:
         """Abandon the scoped non-terminal task after its pipeline TTL."""
         current_time = time.time() if now is None else float(now)
@@ -334,6 +359,8 @@ class HarnessDatabase:
                 (scope_id, *ACTIVE_STATUSES),
             ).fetchone()
             if row is None:
+                return None
+            if expected_task_id is not None and str(row["task_id"]) != expected_task_id:
                 return None
             try:
                 started = datetime.fromisoformat(str(row["started_at"]))
@@ -458,10 +485,20 @@ class HarnessDatabase:
         topic: str,
         topic_hash: str,
         offered_turn: int,
+        max_offers: int,
+        cooldown_turns: int,
     ) -> dict[str, Any]:
         now = utc_now()
         with self._write() as connection:
             task = self._locked_task(connection, task_id)
+            offer_stats = connection.execute(
+                "SELECT COUNT(*) AS count, MAX(offered_turn) AS last_turn FROM branches WHERE task_id = ?",
+                (task_id,),
+            ).fetchone()
+            if int(offer_stats["count"]) >= max_offers:
+                raise StateTransitionError("branch offer limit reached")
+            if offer_stats["last_turn"] is not None and offered_turn - int(offer_stats["last_turn"]) < cooldown_turns:
+                raise StateTransitionError("branch offer cooldown is active")
             connection.execute(
                 """
                 INSERT INTO branches(
@@ -483,8 +520,9 @@ class HarnessDatabase:
                 ),
             )
             connection.execute(
-                "INSERT INTO gates(task_id, gate_type, status, created_at) VALUES (?, 'branch-open', 'pending', ?)",
-                (task_id, now),
+                "INSERT INTO gates(task_id, gate_type, subject_id, status, created_at) "
+                "VALUES (?, 'branch-open', ?, 'pending', ?)",
+                (task_id, branch_id, now),
             )
             connection.execute(
                 "UPDATE tasks SET status = 'awaiting_gate', revision = revision + 1, updated_at = ? WHERE task_id = ?",
@@ -514,8 +552,8 @@ class HarnessDatabase:
                 raise StateTransitionError(f"branch not found: {branch_id}")
             gate = connection.execute(
                 "SELECT id FROM gates WHERE task_id = ? AND gate_type = 'branch-open' AND status = 'pending' "
-                "ORDER BY id DESC LIMIT 1",
-                (branch["task_id"],),
+                "AND subject_id = ? ORDER BY id DESC LIMIT 1",
+                (branch["task_id"], branch_id),
             ).fetchone()
             if gate is None:
                 raise StateTransitionError("pending branch-open gate not found")
@@ -527,9 +565,32 @@ class HarnessDatabase:
                 "UPDATE branches SET approved_at = ?, updated_at = ? WHERE branch_id = ?",
                 (now, now, branch_id),
             )
+            still_pending = connection.execute(
+                "SELECT 1 FROM gates WHERE task_id = ? AND status = 'pending' LIMIT 1",
+                (branch["task_id"],),
+            ).fetchone()
             connection.execute(
-                "UPDATE tasks SET status = 'active', revision = revision + 1, updated_at = ? WHERE task_id = ?",
-                (now, branch["task_id"]),
+                "UPDATE tasks SET status = ?, revision = revision + 1, updated_at = ? WHERE task_id = ?",
+                ("awaiting_gate" if still_pending else "active", now, branch["task_id"]),
+            )
+        return self.branch(branch_id)
+
+    def open_branch(self, branch_id: str, *, seed_path: str, max_open: int) -> dict[str, Any]:
+        with self._write() as connection:
+            branch = connection.execute("SELECT * FROM branches WHERE branch_id = ?", (branch_id,)).fetchone()
+            if branch is None:
+                raise StateTransitionError(f"branch not found: {branch_id}")
+            if not branch["approved_at"]:
+                raise StateTransitionError("branch-open approval is required")
+            open_count = connection.execute(
+                "SELECT COUNT(*) AS count FROM branches WHERE task_id = ? AND status = 'open'",
+                (branch["task_id"],),
+            ).fetchone()
+            if int(open_count["count"]) >= max_open:
+                raise StateTransitionError("open branch limit reached")
+            connection.execute(
+                "UPDATE branches SET status = 'open', seed_path = ?, updated_at = ? WHERE branch_id = ?",
+                (seed_path, utc_now(), branch_id),
             )
         return self.branch(branch_id)
 

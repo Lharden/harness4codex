@@ -80,6 +80,10 @@ def test_plugin_registers_full_codex_lifecycle():
         "SessionEnd",
     } <= set(config["hooks"])
 
+    post_tool_matcher = config["hooks"]["PostToolUse"][0]["matcher"]
+    assert "shell_command" in post_tool_matcher
+    assert "exec_command" in post_tool_matcher
+
 
 def test_codex_native_sdd_skill_surface_is_packaged():
     for name in SDD_SKILLS:

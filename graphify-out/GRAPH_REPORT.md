@@ -1,16 +1,16 @@
-# Graph Report - equipotence-v1  (2026-08-28)
+# Graph Report - equipotence-v1  (2026-08-31)
 
 ## Corpus Check
-- 90 files · ~30,367 words
+- 90 files · ~31,538 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1041 nodes · 1901 edges · 89 communities (65 shown, 24 thin omitted)
-- Extraction: 95% EXTRACTED · 5% INFERRED · 0% AMBIGUOUS · INFERRED: 86 edges (avg confidence: 0.66)
+- 1068 nodes · 1969 edges · 89 communities (65 shown, 24 thin omitted)
+- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 87 edges (avg confidence: 0.66)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `c3d4bd3d`
+- Built from commit: `0715d418`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -103,16 +103,16 @@
 - science_context
 
 ## God Nodes (most connected - your core abstractions)
-1. `HarnessDatabase` - 74 edges
-2. `HarnessStateStore` - 62 edges
-3. `handle_payload()` - 35 edges
-4. `_build_parser()` - 29 edges
-5. `HarnessMemoryStore` - 28 edges
-6. `StateTransitionError` - 28 edges
+1. `HarnessDatabase` - 79 edges
+2. `HarnessStateStore` - 65 edges
+3. `handle_payload()` - 37 edges
+4. `StateTransitionError` - 32 edges
+5. `_build_parser()` - 29 edges
+6. `HarnessMemoryStore` - 28 edges
 7. `ContractSnapshot` - 24 edges
 8. `Classification` - 19 edges
-9. `BranchKeeper` - 17 edges
-10. `utc_now()` - 17 edges
+9. `BranchKeeper` - 18 edges
+10. `utc_now()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
 - `test_lite_client_refuses_to_send_the_control_token_off_loopback()` --calls--> `HarnessLiteClient`  [INFERRED]
@@ -123,8 +123,8 @@
   tests/test_harness_lite_adapter.py → harness4codex/harness_lite_adapter.py
 - `test_same_envelope_inputs_produce_same_idempotency_key()` --calls--> `build_task_envelope()`  [INFERRED]
   tests/test_harness_lite_adapter.py → harness4codex/harness_lite_adapter.py
-- `test_lite_execution_requires_explicit_enable_and_positive_budget()` --calls--> `execution_is_enabled()`  [INFERRED]
-  tests/test_harness_lite_adapter.py → harness4codex/harness_lite_adapter.py
+- `test_retry_backoff_is_exponential_and_capped()` --calls--> `OrchestrationPolicy`  [INFERRED]
+  tests/test_orchestration.py → harness4codex/orchestration.py
 
 ## Import Cycles
 - None detected.
@@ -133,27 +133,27 @@
 
 ### Community 0 - "hook.py"
 Cohesion: 0.09
-Nodes (60): _append_lite_preview(), _append_science_context(), _append_workflow_context(), _block_stop(), _classification_context(), _command_from_payload(), _context_output(), _cwd_from_payload() (+52 more)
+Nodes (64): _append_lite_preview(), _append_science_context(), _append_workflow_context(), _block_stop(), _classification_context(), _command_from_payload(), _context_output(), _cwd_from_payload() (+56 more)
 
 ### Community 1 - "cli.py"
-Cohesion: 0.11
-Nodes (24): build_task_envelope(), _canonical(), _digest(), evidence_bundle_is_acceptable(), git_base_revision(), HarnessLiteClient, lite_route_for(), LiteCallResult (+16 more)
+Cohesion: 0.12
+Nodes (23): build_task_envelope(), _canonical(), _digest(), evidence_bundle_is_acceptable(), git_base_revision(), HarnessLiteClient, lite_route_for(), LiteCallResult (+15 more)
 
 ### Community 2 - "HarnessStateStore"
 Cohesion: 0.09
-Nodes (40): Classification, run(), default_harness_home(), default_state(), HarnessStateError, HarnessStateStore, list_session_states(), Path (+32 more)
+Nodes (39): Classification, run(), default_harness_home(), default_state(), HarnessStateStore, list_session_states(), Path, PathLike (+31 more)
 
 ### Community 3 - "HarnessMemoryStore"
 Cohesion: 0.16
 Nodes (13): ConsolidationReport, HarnessMemoryStore, MemoryConsolidator, Any, Connection, Path, test_consolidator_creates_auditable_proposals_without_editing_files(), test_consolidator_reads_session_event_logs() (+5 more)
 
 ### Community 4 - "load_workflow"
-Cohesion: 0.09
-Nodes (35): BranchKeeper, BranchPolicyError, _jaccard(), _normalize(), Any, Path, ValueError, _slug() (+27 more)
+Cohesion: 0.08
+Nodes (41): BranchKeeper, BranchPolicyError, _jaccard(), _normalize(), Any, Path, ValueError, _slug() (+33 more)
 
 ### Community 5 - "install"
-Cohesion: 0.22
-Nodes (18): _atomic_copytree(), build_hooks_config(), ensure_feature_flag(), _hook_entry(), _ignore_copy(), install(), main(), merge_hooks_config() (+10 more)
+Cohesion: 0.17
+Nodes (24): _atomic_copytree(), build_hooks_config(), ensure_feature_flag(), _hook_entry(), _ignore_copy(), install(), main(), merge_hooks_config() (+16 more)
 
 ### Community 6 - "test_orchestration.py"
 Cohesion: 0.06
@@ -172,12 +172,12 @@ Cohesion: 0.06
 Nodes (36): additionalProperties, items, type, items, type, items, type, items (+28 more)
 
 ### Community 10 - "10. Fase 5 — Graphify como fase nativa"
-Cohesion: 0.06
-Nodes (34): minLength, type, additionalProperties, additionalProperties, properties, required, type, additionalProperties (+26 more)
+Cohesion: 0.04
+Nodes (44): minLength, type, additionalProperties, additionalProperties, properties, required, type, additionalProperties (+36 more)
 
 ### Community 11 - "inspect_command"
-Cohesion: 0.08
-Nodes (63): ArgumentParser, execution_is_enabled(), find_workflow(), load_workflow(), test_find_workflow_walks_up_from_child_directory(), test_load_workflow_parses_frontmatter_defaults_and_body(), test_missing_workflow_returns_none(), test_render_for_prompt_is_compact_and_actionable() (+55 more)
+Cohesion: 0.07
+Nodes (60): ArgumentParser, execution_is_enabled(), find_workflow(), load_workflow(), test_lite_execution_requires_explicit_enable_and_positive_budget(), test_find_workflow_walks_up_from_child_directory(), test_load_workflow_parses_frontmatter_defaults_and_body(), test_missing_workflow_returns_none() (+52 more)
 
 ### Community 12 - "14. Fase 9 — Orquestração real"
 Cohesion: 0.18
@@ -216,8 +216,8 @@ Cohesion: 0.17
 Nodes (12): type, maximum, minimum, type, type, null, string, agreed (+4 more)
 
 ### Community 21 - "11. Fase 6 — Índice gráfico e recuperação"
-Cohesion: 0.26
-Nodes (7): Any, Path, _sections(), WikiIndex, Path, test_wiki_index_returns_cited_sections_and_confidence(), test_wiki_query_degrades_when_vault_is_missing()
+Cohesion: 0.33
+Nodes (11): collect_graph_context(), _git_head(), _graph_head(), _latest_source_mtime(), Any, Path, _sha256(), write_graph_context() (+3 more)
 
 ### Community 22 - "12. Fase 7 — Evidência forte e Stop gate"
 Cohesion: 0.18
@@ -380,7 +380,7 @@ Cohesion: 0.52
 Nodes (5): _normalize(), science_context(), wants_science_evidence(), test_ordinary_bugfix_does_not_activate_science_route(), test_scientific_evidence_prompts_activate_the_read_only_mcp_route()
 
 ## Knowledge Gaps
-- **327 isolated node(s):** `$schema`, `$id`, `type`, `branch_id`, `parent_session_id` (+322 more)
+- **334 isolated node(s):** `$schema`, `$id`, `type`, `branch_id`, `parent_session_id` (+329 more)
   These have ≤1 connection - possible missing edges or undocumented components.
 - **24 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
@@ -388,16 +388,16 @@ Nodes (5): _normalize(), science_context(), wants_science_evidence(), test_ordin
 _Questions this graph is uniquely positioned to answer:_
 
 - **Why does `HarnessStateStore` connect `HarnessStateStore` to `hook.py`, `inspect_command`, `load_workflow`, `classify_prompt`?**
-  _High betweenness centrality (0.042) - this node is a cross-community bridge._
+  _High betweenness centrality (0.068) - this node is a cross-community bridge._
 - **Why does `HarnessDatabase` connect `load_workflow` to `HarnessStateStore`, `inspect_command`?**
-  _High betweenness centrality (0.038) - this node is a cross-community bridge._
-- **Why does `HarnessMemoryStore` connect `HarnessMemoryStore` to `hook.py`, `HarnessStateStore`, `inspect_command`?**
-  _High betweenness centrality (0.022) - this node is a cross-community bridge._
+  _High betweenness centrality (0.045) - this node is a cross-community bridge._
+- **Why does `ContractSnapshot` connect `classify_prompt` to `HarnessStateStore`, `inspect_command`, `load_workflow`?**
+  _High betweenness centrality (0.014) - this node is a cross-community bridge._
 - **Are the 4 inferred relationships involving `HarnessDatabase` (e.g. with `BranchKeeper` and `BranchPolicyError`) actually correct?**
   _`HarnessDatabase` has 4 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 4 inferred relationships involving `HarnessStateStore` (e.g. with `Classification` and `ContractSnapshot`) actually correct?**
   _`HarnessStateStore` has 4 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 11 inferred relationships involving `StateTransitionError` (e.g. with `BranchKeeper` and `.offer()`) actually correct?**
+  _`StateTransitionError` has 11 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 25 inferred relationships involving `_build_parser()` (e.g. with `_cmd_arsenal_check()` and `_cmd_arsenal_overlap()`) actually correct?**
   _`_build_parser()` has 25 INFERRED edges - model-reasoned connections that need verification._
-- **What connects `$schema`, `$id`, `type` to the rest of the system?**
-  _327 weakly-connected nodes found - possible documentation gaps or missing edges._

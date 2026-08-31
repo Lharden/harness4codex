@@ -51,6 +51,8 @@ class BranchKeeper:
                 topic=topic.strip(),
                 topic_hash=topic_hash,
                 offered_turn=turn,
+                max_offers=self.max_offers,
+                cooldown_turns=self.cooldown_turns,
             )
         except (StateTransitionError, sqlite3.IntegrityError) as exc:
             raise BranchPolicyError(str(exc)) from exc
@@ -71,11 +73,6 @@ class BranchKeeper:
         branch = self.database.branch(branch_id)
         if not branch.get("approved_at"):
             raise BranchPolicyError("branch-open approval is required")
-        open_count = sum(
-            1 for item in self.database.list_branches(branch["task_id"]) if item["status"] == "open"
-        )
-        if open_count >= self.max_open:
-            raise BranchPolicyError("open branch limit reached")
         seed = Path(seed_path)
         try:
             prompt = seed.read_text(encoding="utf-8").strip()
@@ -83,7 +80,14 @@ class BranchKeeper:
             raise BranchPolicyError(f"branch seed could not be read: {seed}") from exc
         if not prompt:
             raise BranchPolicyError("branch seed is empty")
-        updated = self.database.update_branch(branch_id, status="open", seed_path=str(seed))
+        try:
+            updated = self.database.open_branch(
+                branch_id,
+                seed_path=str(seed),
+                max_open=self.max_open,
+            )
+        except StateTransitionError as exc:
+            raise BranchPolicyError(str(exc)) from exc
         fork_target = session_id.strip() if session_id and session_id.strip() else "--last"
         updated["launch_argv"] = ["codex", "fork", fork_target, prompt]
         return updated

@@ -18,12 +18,12 @@ from .state import HarnessStateStore, store_for_payload
 from .workflow import load_workflow
 
 VERIFICATION_PATTERNS = [
-    r"\bpytest\b",
-    r"\bnpm\s+(run\s+)?test\b",
-    r"\bpnpm\s+(run\s+)?test\b",
-    r"\byarn\s+test\b",
-    r"\bcargo\s+test\b",
-    r"\bgo\s+test\b",
+    r"(?:^|&&|\|\||;)\s*(?:py|python(?:\.exe)?)\s+-m\s+(?:pytest|unittest)\b",
+    r"(?:^|&&|\|\||;)\s*pytest(?:\.exe)?\b",
+    r"(?:^|&&|\|\||;)\s*(?:npm|pnpm)\s+(?:run\s+)?test\b",
+    r"(?:^|&&|\|\||;)\s*yarn\s+test\b",
+    r"(?:^|&&|\|\||;)\s*cargo\s+test\b",
+    r"(?:^|&&|\|\||;)\s*go\s+test\b",
 ]
 
 PATCH_FILE_PATTERN = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
@@ -93,6 +93,19 @@ def _command_from_payload(payload: dict[str, Any]) -> str:
     if command is None:
         return ""
     return str(command)
+
+
+def _is_shell_tool(payload: dict[str, Any]) -> bool:
+    name = str(payload.get("tool_name") or payload.get("toolName") or "").casefold()
+    return name in {
+        "bash",
+        "shell",
+        "shell_command",
+        "powershell",
+        "exec_command",
+        "functions.exec",
+        "functions.exec_command",
+    }
 
 
 def _extract_files(payload: dict[str, Any]) -> list[str]:
@@ -204,6 +217,8 @@ def _task_context(state: dict[str, Any], heading: str) -> str:
     ]
     if state.get("scope"):
         lines.append(f"Scope: {state.get('scope')}")
+    if state.get("pending_gate"):
+        lines.append(f"Pending human gate: {state.get('pending_gate')}")
     lines.extend(
         [
             f"Level: {state.get('level')} / {state.get('kind')}",
@@ -299,10 +314,15 @@ def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessState
     classification = classify_prompt(prompt)
     store.expire_stale_pipeline()
     current = store.load()
-    if current.get("status") == "active" and not classification.is_task_switch:
+    if current.get("status") in {"active", "awaiting_gate"} and not classification.is_task_switch:
         store.log_event(event, {"continued": current.get("task_id"), "prompt": prompt})
         _record_memory(store, event, prompt, {"continued": current.get("task_id")})
-        context = _append_workflow_context(_task_context(current, "Continue o pipeline ativo."), payload)
+        heading = (
+            f"Resolve the pending human gate {current.get('pending_gate')}."
+            if current.get("status") == "awaiting_gate"
+            else "Continue o pipeline ativo."
+        )
+        context = _append_workflow_context(_task_context(current, heading), payload)
         return _context_output(event, _append_science_context(context, prompt))
     state = store.start_task(classification, prompt)
     store.log_event(event, {"classification": state.get("classification"), "prompt": prompt})
@@ -342,6 +362,8 @@ def _handle_post_tool(event: str, payload: dict[str, Any], store: HarnessStateSt
     files = _extract_files(payload)
     state = store.load()
     promoted = False
+    if command and _is_shell_tool(payload):
+        state = store.record_change_marker("shell-command")
     for file_path in files:
         before = state.get("level")
         state = store.record_file(file_path)
