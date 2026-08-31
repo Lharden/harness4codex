@@ -1,6 +1,13 @@
 import json
+import sqlite3
 
-from harness4codex.hook import _decode_payload, _extract_exit_code, handle_payload
+from harness4codex.hook import (
+    _decode_payload,
+    _extract_exit_code,
+    _is_shell_tool,
+    _looks_like_verification,
+    handle_payload,
+)
 from harness4codex.memory import HarnessMemoryStore
 from harness4codex.state import HarnessStateStore
 
@@ -58,6 +65,50 @@ def test_session_start_resumes_active_pipeline(tmp_path):
     output = handle_payload({"hook_event_name": "SessionStart", "source": "resume"}, harness_home=tmp_path)
 
     assert "Retome o pipeline" in _decode(output)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_session_start_expires_stale_pipeline_before_resuming(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija bug de login."},
+        harness_home=tmp_path,
+    )
+    state_path = tmp_path / "state.json"
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["started_at"] = "2000-01-01T00:00:00+00:00"
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+    with sqlite3.connect(tmp_path / "harness.db") as connection:
+        connection.execute(
+            "UPDATE tasks SET started_at = ? WHERE task_id = ?",
+            ("2000-01-01T00:00:00+00:00", state["task_id"]),
+        )
+
+    output = handle_payload({"hook_event_name": "SessionStart", "source": "resume"}, harness_home=tmp_path)
+
+    assert output == ""
+    expired = HarnessStateStore(tmp_path).load()
+    assert expired["status"] == "idle"
+    assert expired["task_id"] is None
+
+
+def test_user_response_continues_pending_gate_instead_of_starting_new_task(tmp_path):
+    store = HarnessStateStore(tmp_path)
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
+        harness_home=tmp_path,
+    )
+    waiting = store.set_pending_gate("approve-plan")
+
+    output = handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Aprovo o plano."},
+        harness_home=tmp_path,
+    )
+
+    current = store.load()
+    assert current["task_id"] == waiting["task_id"]
+    assert current["status"] == "awaiting_gate"
+    context = _decode(output)["hookSpecificOutput"]["additionalContext"]
+    assert "approve-plan" in context
+    assert "Resolve" in context
 
 
 def test_parallel_sessions_do_not_continue_each_other(tmp_path):
@@ -261,6 +312,79 @@ def test_successful_verification_is_recorded_from_nested_response(tmp_path):
 
     assert output == ""
     assert HarnessStateStore(tmp_path).load()["verified"] is True
+
+
+def test_verification_detection_requires_an_actual_test_runner_command():
+    assert _looks_like_verification("python -m pytest -q") is True
+    assert _looks_like_verification("npm run test") is True
+    assert _looks_like_verification("echo pytest 1 passed") is False
+    assert _looks_like_verification("python -c \"print('pytest 1 passed')\"") is False
+    assert _is_shell_tool({"tool_name": "shell_command"}) is True
+    assert _is_shell_tool({"tool_name": "exec_command"}) is True
+    assert _is_shell_tool({"tool_name": "functions.exec"}) is True
+
+
+def test_shell_command_invalidates_prior_evidence_without_promoting_file_count(tmp_path):
+    store = HarnessStateStore(tmp_path)
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija o bug."},
+        harness_home=tmp_path,
+    )
+    store.mark_verified("python -m pytest -q")
+    before = store.load()
+
+    handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "shell_command",
+            "tool_input": {"cmd": "sed -i s/old/new/ app.py"},
+            "tool_response": {"exit_code": 0, "output": ""},
+        },
+        harness_home=tmp_path,
+    )
+
+    after = store.load()
+    assert after["verified"] is False
+    assert after["code_revision"] == before["code_revision"] + 1
+    assert after["files"] == before["files"]
+
+
+def test_zero_collected_tests_do_not_satisfy_stop_gate(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija o bug."},
+        harness_home=tmp_path,
+    )
+
+    handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"cmd": "python -m pytest -q"},
+            "tool_response": {"content": [{"type": "text", "text": "Process exited with code 0\nno tests ran"}]},
+        },
+        harness_home=tmp_path,
+    )
+
+    assert HarnessStateStore(tmp_path).load()["verified"] is False
+    assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
+
+
+def test_stop_escalates_after_two_automatic_continuations_then_allows_human_gate(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
+        harness_home=tmp_path,
+    )
+
+    assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
+    assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
+    escalation = _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))
+
+    assert escalation["decision"] == "block"
+    assert "user" in escalation["reason"].lower()
+    state = HarnessStateStore(tmp_path).load()
+    assert state["status"] == "awaiting_gate"
+    assert state["pending_gate"] == "escalation"
+    assert handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path) == ""
 
 
 def test_write_after_verification_invalidates_the_gate(tmp_path):

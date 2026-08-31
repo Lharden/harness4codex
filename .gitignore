@@ -5,6 +5,7 @@ __pycache__/
 .pytest_tmp_codex/
 pytest-cache-files-*/
 .codex_ops_validation*/
+graphify-out/
 dist/
 build/
 *.egg-info/

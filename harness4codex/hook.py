@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import sqlite3
 import sys
@@ -17,12 +18,12 @@ from .state import HarnessStateStore, store_for_payload
 from .workflow import load_workflow
 
 VERIFICATION_PATTERNS = [
-    r"\bpytest\b",
-    r"\bnpm\s+(run\s+)?test\b",
-    r"\bpnpm\s+(run\s+)?test\b",
-    r"\byarn\s+test\b",
-    r"\bcargo\s+test\b",
-    r"\bgo\s+test\b",
+    r"(?:^|&&|\|\||;)\s*(?:py|python(?:\.exe)?)\s+-m\s+(?:pytest|unittest)\b",
+    r"(?:^|&&|\|\||;)\s*pytest(?:\.exe)?\b",
+    r"(?:^|&&|\|\||;)\s*(?:npm|pnpm)\s+(?:run\s+)?test\b",
+    r"(?:^|&&|\|\||;)\s*yarn\s+test\b",
+    r"(?:^|&&|\|\||;)\s*cargo\s+test\b",
+    r"(?:^|&&|\|\||;)\s*go\s+test\b",
 ]
 
 PATCH_FILE_PATTERN = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
@@ -94,6 +95,19 @@ def _command_from_payload(payload: dict[str, Any]) -> str:
     return str(command)
 
 
+def _is_shell_tool(payload: dict[str, Any]) -> bool:
+    name = str(payload.get("tool_name") or payload.get("toolName") or "").casefold()
+    return name in {
+        "bash",
+        "shell",
+        "shell_command",
+        "powershell",
+        "exec_command",
+        "functions.exec",
+        "functions.exec_command",
+    }
+
+
 def _extract_files(payload: dict[str, Any]) -> list[str]:
     tool_input = _tool_input(payload)
     files: list[str] = []
@@ -154,6 +168,46 @@ def _extract_exit_code(payload: dict[str, Any]) -> int | None:
     return None
 
 
+def _response_text(payload: dict[str, Any]) -> str:
+    response = payload.get("tool_response") or payload.get("toolResponse") or payload.get("output") or ""
+    fragments: list[str] = []
+
+    def walk(value: Any) -> None:
+        if isinstance(value, str):
+            fragments.append(value)
+        elif isinstance(value, dict):
+            for nested in value.values():
+                walk(nested)
+        elif isinstance(value, (list, tuple)):
+            for nested in value:
+                walk(nested)
+
+    walk(response)
+    return "\n".join(fragments)
+
+
+def _extract_test_counts(payload: dict[str, Any]) -> tuple[int | None, int | None, str | None]:
+    text = _response_text(payload)
+    output_hash = hashlib.sha256(text.encode("utf-8")).hexdigest() if text else None
+    if re.search(r"\b(no tests ran|collected 0 items|0 tests? (?:run|passed|total))\b", text, re.IGNORECASE):
+        return 0, 0, output_hash
+    total_match = re.search(r"\b(\d+)\s+passed\b[^\n]*\b(\d+)\s+total\b", text, re.IGNORECASE)
+    if total_match:
+        return int(total_match.group(2)), int(total_match.group(1)), output_hash
+    passed = [int(value) for value in re.findall(r"\b(\d+)\s+passed\b", text, re.IGNORECASE)]
+    failed = [int(value) for value in re.findall(r"\b(\d+)\s+failed\b", text, re.IGNORECASE)]
+    errors = [int(value) for value in re.findall(r"\b(\d+)\s+errors?\b", text, re.IGNORECASE)]
+    if passed or failed or errors:
+        passed_count = max(passed, default=0)
+        collected = passed_count + max(failed, default=0) + max(errors, default=0)
+        return collected, passed_count, output_hash
+    if re.search(r"\btest result:\s*ok\b", text, re.IGNORECASE):
+        return 1, 1, output_hash
+    if re.search(r"(?m)^ok\s+\S+", text):
+        return 1, 1, output_hash
+    return None, None, output_hash
+
+
 def _task_context(state: dict[str, Any], heading: str) -> str:
     pipeline = state.get("pipeline") or []
     lines = [
@@ -163,6 +217,8 @@ def _task_context(state: dict[str, Any], heading: str) -> str:
     ]
     if state.get("scope"):
         lines.append(f"Scope: {state.get('scope')}")
+    if state.get("pending_gate"):
+        lines.append(f"Pending human gate: {state.get('pending_gate')}")
     lines.extend(
         [
             f"Level: {state.get('level')} / {state.get('kind')}",
@@ -246,6 +302,7 @@ def _record_memory(store: HarnessStateStore, event: str, text: str, metadata: di
 
 
 def _handle_session_start(event: str, store: HarnessStateStore) -> str:
+    store.expire_stale_pipeline()
     state = store.load()
     if state.get("status") in {"active", "verified"} and state.get("pipeline"):
         return _context_output(event, _task_context(state, "Retome o pipeline ativo."))
@@ -255,11 +312,17 @@ def _handle_session_start(event: str, store: HarnessStateStore) -> str:
 def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
     prompt = str(payload.get("prompt") or payload.get("user_prompt") or payload.get("message") or "")
     classification = classify_prompt(prompt)
+    store.expire_stale_pipeline()
     current = store.load()
-    if current.get("status") == "active" and not classification.is_task_switch:
+    if current.get("status") in {"active", "awaiting_gate"} and not classification.is_task_switch:
         store.log_event(event, {"continued": current.get("task_id"), "prompt": prompt})
         _record_memory(store, event, prompt, {"continued": current.get("task_id")})
-        context = _append_workflow_context(_task_context(current, "Continue o pipeline ativo."), payload)
+        heading = (
+            f"Resolve the pending human gate {current.get('pending_gate')}."
+            if current.get("status") == "awaiting_gate"
+            else "Continue o pipeline ativo."
+        )
+        context = _append_workflow_context(_task_context(current, heading), payload)
         return _context_output(event, _append_science_context(context, prompt))
     state = store.start_task(classification, prompt)
     store.log_event(event, {"classification": state.get("classification"), "prompt": prompt})
@@ -299,14 +362,23 @@ def _handle_post_tool(event: str, payload: dict[str, Any], store: HarnessStateSt
     files = _extract_files(payload)
     state = store.load()
     promoted = False
+    if command and _is_shell_tool(payload):
+        state = store.record_change_marker("shell-command")
     for file_path in files:
         before = state.get("level")
         state = store.record_file(file_path)
         promoted = promoted or (before == "C0" and state.get("level") == "C1")
     exit_code = _extract_exit_code(payload)
     verification_seen = _looks_like_verification(command)
-    if verification_seen and exit_code == 0:
-        state = store.mark_verified(command)
+    tests_collected, tests_passed, output_hash = _extract_test_counts(payload)
+    if verification_seen:
+        state = store.record_verification(
+            command,
+            exit_code=exit_code,
+            tests_collected=tests_collected,
+            tests_passed=tests_passed,
+            output_hash=output_hash,
+        )
     store.log_event(event, {"command": command, "files": files, "exit_code": exit_code})
     _record_memory(store, event, command or ", ".join(files), {"files": files, "exit_code": exit_code})
     if promoted:
@@ -319,6 +391,16 @@ def _handle_post_tool(event: str, payload: dict[str, Any], store: HarnessStateSt
             event,
             "HARNESS4CODEX saw a verification command, but the hook could not confirm exit code 0. Read the tool output before marking the task verified.",
         )
+    if verification_seen and exit_code == 0 and tests_collected == 0:
+        return _context_output(
+            event,
+            "HARNESS4CODEX verification evidence rejected because the command collected zero tests.",
+        )
+    if verification_seen and exit_code == 0 and tests_collected is None:
+        return _context_output(
+            event,
+            "HARNESS4CODEX could not establish how many tests ran; attach explicit verification evidence.",
+        )
     return ""
 
 
@@ -327,6 +409,15 @@ def _handle_stop(payload: dict[str, Any], store: HarnessStateStore) -> str:
         return ""
     state = store.load()
     if state.get("status") == "active" and state.get("pipeline") and not state.get("verified"):
+        continuations = int(state.get("stop_continuations") or 0)
+        if continuations >= 2:
+            store.set_pending_gate("escalation")
+            reason = (
+                "HARNESS4CODEX escalation gate: verification remains incomplete after two continuations. "
+                "Ask the user for direction with the concrete blocker and evidence."
+            )
+            store.log_event("Stop", {"blocked": True, "reason": reason, "gate": "escalation"})
+            return _block_stop(reason)
         store.increment_stop_continuations()
         reason = (
             "HARNESS4CODEX verification gate: continue with codex-harness-workflow and run "
@@ -335,6 +426,25 @@ def _handle_stop(payload: dict[str, Any], store: HarnessStateStore) -> str:
         store.log_event("Stop", {"blocked": True, "reason": reason})
         return _block_stop(reason)
     store.log_event("Stop", {"blocked": False, "status": state.get("status")})
+    return ""
+
+
+def _handle_compaction(event: str, store: HarnessStateStore) -> str:
+    state = store.load()
+    store.log_event(event, {"task_id": state.get("task_id"), "phase": state.get("current_step")})
+    if state.get("status") in {"active", "verified", "awaiting_gate"}:
+        return _context_output(event, _task_context(state, "Preserve this pipeline handoff across compaction."))
+    return ""
+
+
+def _handle_subagent(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
+    agent_id = payload.get("agent_id") or payload.get("agentId") or payload.get("subagent_id")
+    store.log_event(event, {"agent_id": agent_id, "agent_type": payload.get("agent_type")})
+    if event == "SubagentStart":
+        return _context_output(
+            event,
+            "HARNESS4CODEX node contract: return role, status, findings, evidence_refs, coverage, and errors.",
+        )
     return ""
 
 
@@ -351,8 +461,15 @@ def handle_payload(payload: dict[str, Any], harness_home: str | Path | None = No
         return _handle_permission(payload, store)
     if event == "PostToolUse":
         return _handle_post_tool(event, payload, store)
+    if event in {"PreCompact", "PostCompact"}:
+        return _handle_compaction(event, store)
+    if event in {"SubagentStart", "SubagentStop"}:
+        return _handle_subagent(event, payload, store)
     if event == "Stop":
         return _handle_stop(payload, store)
+    if event == "SessionEnd":
+        store.log_event(event, {"reason": payload.get("reason")})
+        return ""
     return ""
 
 

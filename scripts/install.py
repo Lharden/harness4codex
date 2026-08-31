@@ -9,7 +9,19 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-EVENTS = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse", "Stop"]
+EVENTS = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "PreCompact",
+    "PostCompact",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "SessionEnd",
+]
 
 
 def _quote_path(path: str | os.PathLike[str]) -> str:
@@ -36,10 +48,15 @@ def build_hooks_config(hook_path: str | os.PathLike[str]) -> dict[str, Any]:
         "hooks": {
             "SessionStart": [_hook_entry(hook_path, "Harness4Codex session", "startup|resume|clear")],
             "UserPromptSubmit": [_hook_entry(hook_path, "Harness4Codex classify")],
-            "PreToolUse": [_hook_entry(hook_path, "Harness4Codex guard", "Bash|shell_command|apply_patch")],
-            "PermissionRequest": [_hook_entry(hook_path, "Harness4Codex permission", "Bash|shell_command")],
-            "PostToolUse": [_hook_entry(hook_path, "Harness4Codex state", "Bash|shell_command|apply_patch")],
+            "PreToolUse": [_hook_entry(hook_path, "Harness4Codex guard", "Bash|shell_command|exec_command|functions.exec|functions.exec_command|apply_patch")],
+            "PermissionRequest": [_hook_entry(hook_path, "Harness4Codex permission", "Bash|shell_command|exec_command|functions.exec|functions.exec_command")],
+            "PostToolUse": [_hook_entry(hook_path, "Harness4Codex state", "Bash|shell_command|exec_command|functions.exec|functions.exec_command|apply_patch")],
+            "PreCompact": [_hook_entry(hook_path, "Harness4Codex handoff")],
+            "PostCompact": [_hook_entry(hook_path, "Harness4Codex restore")],
+            "SubagentStart": [_hook_entry(hook_path, "Harness4Codex node start")],
+            "SubagentStop": [_hook_entry(hook_path, "Harness4Codex node result")],
             "Stop": [_hook_entry(hook_path, "Harness4Codex verify")],
+            "SessionEnd": [_hook_entry(hook_path, "Harness4Codex session close")],
         }
     }
 
@@ -88,6 +105,38 @@ def merge_hooks_config(existing: dict[str, Any], new: dict[str, Any], hook_path:
     return merged
 
 
+def remove_harness_hooks(existing: dict[str, Any]) -> dict[str, Any]:
+    """Remove legacy global Harness4Codex commands while preserving other hooks."""
+    cleaned = existing.copy() if isinstance(existing, dict) else {}
+    cleaned_hooks: dict[str, Any] = {}
+    for event, entries in dict(cleaned.get("hooks") or {}).items():
+        retained = []
+        for entry in entries:
+            commands = [hook.get("command", "") for hook in entry.get("hooks", [])]
+            if not any("codex_harness_hook.py" in command for command in commands):
+                retained.append(entry)
+        cleaned_hooks[event] = retained
+    cleaned["hooks"] = cleaned_hooks
+    return cleaned
+
+
+def native_plugin_enabled(config_text: str) -> bool:
+    active_harness_section = False
+    for raw_line in config_text.splitlines():
+        line = raw_line.strip()
+        section = re.fullmatch(r"\[plugins\.(.+)\]", line)
+        if section:
+            plugin_name = section.group(1).strip().strip("\"'")
+            active_harness_section = plugin_name.split("@", 1)[0] == "harness4codex"
+            continue
+        if line.startswith("["):
+            active_harness_section = False
+            continue
+        if active_harness_section and re.fullmatch(r"enabled\s*=\s*true(?:\s*#.*)?", line, re.IGNORECASE):
+            return True
+    return False
+
+
 def _ignore_copy(dir_path: str, names: list[str]) -> set[str]:
     ignored = {".git", ".pytest_cache", ".pytest_cache_codex", ".pytest_tmp_codex", "__pycache__"}
     ignored.update(name for name in names if name.startswith("pytest-cache-files-"))
@@ -128,6 +177,8 @@ def install(source: Path, codex_home: Path, dry_run: bool = False) -> dict[str, 
     hook_path = plugin_dest / "hooks" / "codex_harness_hook.py"
     hooks_config_path = codex_home / "hooks.json"
     config_path = codex_home / "config.toml"
+    config_text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
+    hook_mode = "plugin" if native_plugin_enabled(config_text) else "global"
 
     result = {
         "source": str(source),
@@ -137,6 +188,7 @@ def install(source: Path, codex_home: Path, dry_run: bool = False) -> dict[str, 
         "hook": str(hook_path),
         "hooks_json": str(hooks_config_path),
         "config_toml": str(config_path),
+        "hook_mode": hook_mode,
     }
 
     if dry_run:
@@ -145,16 +197,22 @@ def install(source: Path, codex_home: Path, dry_run: bool = False) -> dict[str, 
     codex_home.mkdir(parents=True, exist_ok=True)
     _atomic_copytree(source, plugin_dest, ignore=_ignore_copy)
 
-    _atomic_copytree(source / "skills" / "codex-harness-workflow", skill_dest)
+    for skill_source in sorted((source / "skills").iterdir()):
+        if skill_source.is_dir() and (skill_source / "SKILL.md").exists():
+            _atomic_copytree(skill_source, codex_home / "skills" / skill_source.name)
 
-    new_hooks = build_hooks_config(hook_path)
     existing_hooks: dict[str, Any] = {}
     if hooks_config_path.exists():
         existing_hooks = json.loads(hooks_config_path.read_text(encoding="utf-8"))
-    merged_hooks = merge_hooks_config(existing_hooks, new_hooks, hook_path)
-    hooks_config_path.write_text(json.dumps(merged_hooks, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if hook_mode == "plugin":
+        if hooks_config_path.exists():
+            cleaned_hooks = remove_harness_hooks(existing_hooks)
+            hooks_config_path.write_text(json.dumps(cleaned_hooks, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    else:
+        new_hooks = build_hooks_config(hook_path)
+        merged_hooks = merge_hooks_config(existing_hooks, new_hooks, hook_path)
+        hooks_config_path.write_text(json.dumps(merged_hooks, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    config_text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     config_path.write_text(ensure_feature_flag(config_text), encoding="utf-8")
 
     return result

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -55,8 +56,38 @@ class HarnessMemoryStore:
                     updated_at TEXT NOT NULL,
                     UNIQUE(scope, kind, key)
                 );
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS history_fts USING fts5(
+                    event,
+                    text,
+                    metadata_json,
+                    content='history',
+                    content_rowid='id',
+                    tokenize='unicode61 remove_diacritics 2'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS history_fts_insert AFTER INSERT ON history BEGIN
+                    INSERT INTO history_fts(rowid, event, text, metadata_json)
+                    VALUES (new.id, new.event, new.text, new.metadata_json);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS history_fts_delete AFTER DELETE ON history BEGIN
+                    INSERT INTO history_fts(history_fts, rowid, event, text, metadata_json)
+                    VALUES ('delete', old.id, old.event, old.text, old.metadata_json);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS history_fts_update AFTER UPDATE ON history BEGIN
+                    INSERT INTO history_fts(history_fts, rowid, event, text, metadata_json)
+                    VALUES ('delete', old.id, old.event, old.text, old.metadata_json);
+                    INSERT INTO history_fts(rowid, event, text, metadata_json)
+                    VALUES (new.id, new.event, new.text, new.metadata_json);
+                END;
                 """
             )
+            history_count = int(connection.execute("SELECT COUNT(*) FROM history").fetchone()[0])
+            fts_count = int(connection.execute("SELECT COUNT(*) FROM history_fts").fetchone()[0])
+            if history_count != fts_count:
+                connection.execute("INSERT INTO history_fts(history_fts) VALUES ('rebuild')")
 
     def record_history(self, event: str, text: str, metadata: dict[str, Any] | None = None) -> None:
         with self._connect() as connection:
@@ -90,18 +121,35 @@ class HarnessMemoryStore:
             )
 
     def search(self, query: str, limit: int = 10) -> list[dict[str, Any]]:
-        like = f"%{query}%"
+        tokens = re.findall(r"[^\W_]+", query, flags=re.UNICODE)
+        if not tokens:
+            return []
+        match = " AND ".join(json.dumps(token, ensure_ascii=False) for token in tokens)
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT id, event, text, metadata_json, created_at
-                FROM history
-                WHERE text LIKE ? OR event LIKE ? OR metadata_json LIKE ?
-                ORDER BY id DESC
-                LIMIT ?
-                """,
-                (like, like, like, limit),
-            ).fetchall()
+            try:
+                rows = connection.execute(
+                    """
+                    SELECT h.id, h.event, h.text, h.metadata_json, h.created_at
+                    FROM history_fts
+                    JOIN history AS h ON h.id = history_fts.rowid
+                    WHERE history_fts MATCH ?
+                    ORDER BY bm25(history_fts), h.id DESC
+                    LIMIT ?
+                    """,
+                    (match, limit),
+                ).fetchall()
+            except sqlite3.OperationalError:
+                like = f"%{' '.join(tokens)}%"
+                rows = connection.execute(
+                    """
+                    SELECT id, event, text, metadata_json, created_at
+                    FROM history
+                    WHERE text LIKE ? OR event LIKE ? OR metadata_json LIKE ?
+                    ORDER BY id DESC
+                    LIMIT ?
+                    """,
+                    (like, like, like, limit),
+                ).fetchall()
         return [
             {
                 "id": row["id"],

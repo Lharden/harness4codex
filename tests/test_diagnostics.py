@@ -63,6 +63,9 @@ args = ["claims-mcp"]
 
     assert report.ok is True
     assert not [check for check in report.checks if check.status == "fail"]
+    codes = {check.code for check in report.checks}
+    assert "CONTRACT_LOCK_VALID" in codes
+    assert "FULL_LIFECYCLE_HOOKS" in codes
 
 
 def test_doctor_marks_obsidian_restart_when_user_env_has_token_but_process_does_not(tmp_path):
