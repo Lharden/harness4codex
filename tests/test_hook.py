@@ -1,6 +1,8 @@
 import json
 import sqlite3
 
+import pytest
+
 from harness4codex.hook import (
     _decode_payload,
     _extract_exit_code,
@@ -322,6 +324,41 @@ def test_verification_detection_requires_an_actual_test_runner_command():
     assert _is_shell_tool({"tool_name": "shell_command"}) is True
     assert _is_shell_tool({"tool_name": "exec_command"}) is True
     assert _is_shell_tool({"tool_name": "functions.exec"}) is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python -m pytest --invalid-option; echo '1 passed'",
+        "python -m pytest --invalid-option && echo '1 passed'",
+        "python -m pytest --invalid-option || echo '1 passed'",
+        "python -m pytest --invalid-option | echo '1 passed'",
+        "python -m pytest --invalid-option\necho '1 passed'",
+    ],
+)
+def test_composed_shell_command_is_not_trusted_verification(command):
+    assert _looks_like_verification(command) is False
+
+
+def test_composed_command_cannot_create_automatic_test_evidence(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija o bug."},
+        harness_home=tmp_path,
+    )
+
+    handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"cmd": "python -m pytest --invalid-option; echo '1 passed'"},
+            "tool_response": {
+                "content": [{"type": "text", "text": "Process exited with code 0\n1 passed"}]
+            },
+        },
+        harness_home=tmp_path,
+    )
+
+    assert HarnessStateStore(tmp_path).load()["verified"] is False
 
 
 def test_shell_command_invalidates_prior_evidence_without_promoting_file_count(tmp_path):

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import re
 import sqlite3
 import sys
@@ -18,12 +18,12 @@ from .state import HarnessStateStore, store_for_payload
 from .workflow import load_workflow
 
 VERIFICATION_PATTERNS = [
-    r"(?:^|&&|\|\||;)\s*(?:py|python(?:\.exe)?)\s+-m\s+(?:pytest|unittest)\b",
-    r"(?:^|&&|\|\||;)\s*pytest(?:\.exe)?\b",
-    r"(?:^|&&|\|\||;)\s*(?:npm|pnpm)\s+(?:run\s+)?test\b",
-    r"(?:^|&&|\|\||;)\s*yarn\s+test\b",
-    r"(?:^|&&|\|\||;)\s*cargo\s+test\b",
-    r"(?:^|&&|\|\||;)\s*go\s+test\b",
+    r"^\s*(?:py|python(?:\.exe)?)\s+-m\s+(?:pytest|unittest)\b",
+    r"^\s*pytest(?:\.exe)?\b",
+    r"^\s*(?:npm|pnpm)\s+(?:run\s+)?test\b",
+    r"^\s*yarn\s+test\b",
+    r"^\s*cargo\s+test\b",
+    r"^\s*go\s+test\b",
 ]
 
 PATCH_FILE_PATTERN = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
@@ -121,7 +121,32 @@ def _extract_files(payload: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(files))
 
 
+def _has_unquoted_shell_composition(command: str) -> bool:
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(command):
+        if escaped:
+            escaped = False
+            continue
+        if quote:
+            if character == "\\" and quote == '"':
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if character in {"'", '"'}:
+            quote = character
+            continue
+        if character in {";", "|", "&", "\r", "\n", "`"}:
+            return True
+        if character == "$" and index + 1 < len(command) and command[index + 1] == "(":
+            return True
+    return quote is not None
+
+
 def _looks_like_verification(command: str) -> bool:
+    if not command or _has_unquoted_shell_composition(command):
+        return False
     return any(re.search(pattern, command, re.IGNORECASE) for pattern in VERIFICATION_PATTERNS)
 
 

@@ -5,10 +5,12 @@ import json
 import sqlite3
 import time
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
+
 
 class StateTransitionError(RuntimeError):
     pass
@@ -802,9 +804,20 @@ class HarnessDatabase:
                 ),
             )
             connection.execute(
-                "UPDATE tasks SET verified = ?, status = CASE WHEN ? THEN 'verified' ELSE status END, "
+                "UPDATE tasks SET verified = ?, status = ?, "
                 "revision = revision + 1, updated_at = ? WHERE task_id = ?",
-                (1 if valid_test else int(row["verified"]), 1 if valid_test else 0, utc_now(), task_id),
+                (
+                    1 if valid_test else 0 if evidence_type == "test" else int(row["verified"]),
+                    (
+                        "verified"
+                        if valid_test
+                        else "active"
+                        if evidence_type == "test" and row["status"] == "verified"
+                        else row["status"]
+                    ),
+                    utc_now(),
+                    task_id,
+                ),
             )
         return self.task(task_id)
 
@@ -865,9 +878,13 @@ class HarnessDatabase:
             SELECT 1 FROM evidence
             WHERE task_id = ? AND code_revision = ? AND evidence_type = 'test'
               AND exit_code = 0 AND tests_collected > 0 AND tests_passed = tests_collected
+              AND id = (
+                  SELECT MAX(id) FROM evidence
+                  WHERE task_id = ? AND code_revision = ? AND evidence_type = 'test'
+              )
             LIMIT 1
             """,
-            (row["task_id"], row["code_revision"]),
+            (row["task_id"], row["code_revision"], row["task_id"], row["code_revision"]),
         ).fetchone() is not None
 
     @staticmethod
