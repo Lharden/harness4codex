@@ -215,8 +215,11 @@ def _plugin_manifest(plugin_root: Path) -> dict[str, Any]:
 def _default_native_runner(command: list[str], codex_home: Path) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     environment["CODEX_HOME"] = str(codex_home)
+    launcher = shutil.which(command[0])
+    if launcher is None:
+        raise RuntimeError(f"Codex launcher is not available on PATH: {command[0]}")
     return subprocess.run(
-        command,
+        [launcher, *command[1:]],
         capture_output=True,
         text=True,
         check=False,

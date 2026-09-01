@@ -4,11 +4,30 @@ import subprocess
 from pathlib import Path
 
 from scripts.install import (
+    _default_native_runner,
     build_hooks_config,
     ensure_feature_flag,
     install,
     native_plugin_enabled,
 )
+
+
+def test_native_runner_resolves_the_real_codex_launcher(monkeypatch, tmp_path):
+    captured = {}
+    launcher = str(tmp_path / "codex.CMD")
+    monkeypatch.setattr(shutil, "which", lambda command: launcher if command == "codex" else None)
+
+    def fake_run(command, **kwargs):
+        captured["command"] = command
+        captured["environment"] = kwargs["env"]
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    _default_native_runner(["codex", "plugin", "list"], tmp_path)
+
+    assert captured["command"][0] == launcher
+    assert captured["environment"]["CODEX_HOME"] == str(tmp_path)
 
 
 def test_build_hooks_config_contains_all_core_events():
