@@ -133,9 +133,9 @@ def test_lite_client_refuses_to_send_the_control_token_off_loopback():
 def test_lite_execution_requires_explicit_enable_and_positive_budget():
     assert execution_is_enabled({}) is False
     assert execution_is_enabled({"HARNESS4CODEX_LITE_EXECUTE": "true"}) is False
-    assert execution_is_enabled(
-        {"HARNESS4CODEX_LITE_EXECUTE": "true", "HARNESS4CODEX_LITE_MAX_COST_USD": "1.50"}
-    ) is True
+    assert (
+        execution_is_enabled({"HARNESS4CODEX_LITE_EXECUTE": "true", "HARNESS4CODEX_LITE_MAX_COST_USD": "1.50"}) is True
+    )
 
 
 def test_evidence_bundle_requires_success_artifacts_and_criterion_evidence():

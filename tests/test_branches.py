@@ -1,5 +1,5 @@
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -105,20 +105,41 @@ def test_branch_offer_and_open_limits_are_enforced_inside_database_transaction(t
     db = HarnessDatabase(tmp_path)
     task = _task(db)
     db.create_branch(
-        task["task_id"], branch_id="b-one", slug="one", name="One", topic="one",
-        topic_hash="hash-one", offered_turn=10, max_offers=1, cooldown_turns=0,
+        task["task_id"],
+        branch_id="b-one",
+        slug="one",
+        name="One",
+        topic="one",
+        topic_hash="hash-one",
+        offered_turn=10,
+        max_offers=1,
+        cooldown_turns=0,
     )
     with pytest.raises(StateTransitionError, match="offer limit"):
         db.create_branch(
-            task["task_id"], branch_id="b-two", slug="two", name="Two", topic="two",
-            topic_hash="hash-two", offered_turn=11, max_offers=1, cooldown_turns=0,
+            task["task_id"],
+            branch_id="b-two",
+            slug="two",
+            name="Two",
+            topic="two",
+            topic_hash="hash-two",
+            offered_turn=11,
+            max_offers=1,
+            cooldown_turns=0,
         )
 
     db.approve_branch("b-one")
     db.open_branch("b-one", seed_path="one.md", max_open=1)
     db.create_branch(
-        task["task_id"], branch_id="b-three", slug="three", name="Three", topic="three",
-        topic_hash="hash-three", offered_turn=20, max_offers=3, cooldown_turns=0,
+        task["task_id"],
+        branch_id="b-three",
+        slug="three",
+        name="Three",
+        topic="three",
+        topic_hash="hash-three",
+        offered_turn=20,
+        max_offers=3,
+        cooldown_turns=0,
     )
     db.approve_branch("b-three")
     with pytest.raises(StateTransitionError, match="open branch limit"):

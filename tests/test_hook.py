@@ -223,9 +223,7 @@ def test_post_tool_use_promotes_after_multiple_files(tmp_path):
         {
             "hook_event_name": "PostToolUse",
             "tool_name": "apply_patch",
-            "tool_input": {
-                "command": "*** Update File: a.py\n*** Add File: b.py\n*** Update File: c.py\n"
-            },
+            "tool_input": {"command": "*** Update File: a.py\n*** Add File: b.py\n*** Update File: c.py\n"},
         },
         harness_home=tmp_path,
     )
@@ -305,9 +303,7 @@ def test_successful_verification_is_recorded_from_nested_response(tmp_path):
             "hook_event_name": "PostToolUse",
             "tool_name": "Bash",
             "tool_input": {"cmd": "python -m pytest -q"},
-            "tool_response": {
-                "content": [{"type": "text", "text": "Process exited with code 0\n75 passed"}]
-            },
+            "tool_response": {"content": [{"type": "text", "text": "Process exited with code 0\n75 passed"}]},
         },
         harness_home=tmp_path,
     )
@@ -351,9 +347,7 @@ def test_composed_command_cannot_create_automatic_test_evidence(tmp_path):
             "hook_event_name": "PostToolUse",
             "tool_name": "Bash",
             "tool_input": {"cmd": "python -m pytest --invalid-option; echo '1 passed'"},
-            "tool_response": {
-                "content": [{"type": "text", "text": "Process exited with code 0\n1 passed"}]
-            },
+            "tool_response": {"content": [{"type": "text", "text": "Process exited with code 0\n1 passed"}]},
         },
         harness_home=tmp_path,
     )
@@ -447,9 +441,7 @@ def test_write_after_verification_invalidates_the_gate(tmp_path):
 
 
 def test_utf8_hook_input_is_decoded_independently_of_windows_stdio():
-    payload = _decode_payload(
-        '{"hook_event_name":"UserPromptSubmit","prompt":"correção e ciência"}'.encode()
-    )
+    payload = _decode_payload('{"hook_event_name":"UserPromptSubmit","prompt":"correção e ciência"}'.encode())
 
     assert payload["prompt"] == "correção e ciência"
 

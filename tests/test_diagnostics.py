@@ -4,8 +4,17 @@ import sqlite3
 from harness4codex.diagnostics import run_doctor
 
 REQUIRED_HOOKS = {
-    "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
-    "PreCompact", "PostCompact", "SubagentStart", "SubagentStop", "Stop", "SessionEnd",
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "PreCompact",
+    "PostCompact",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "SessionEnd",
 }
 
 
@@ -23,10 +32,7 @@ def _write_config(home, text):
         (plugin / "hooks" / "hooks.json").write_text(
             json.dumps({"hooks": {event: [] for event in REQUIRED_HOOKS}}), encoding="utf-8"
         )
-    marketplace_config = (
-        '\n[marketplaces.personal]\nsource_type = "local"\n'
-        f'source = "{marketplace.as_posix()}"\n'
-    )
+    marketplace_config = f'\n[marketplaces.personal]\nsource_type = "local"\nsource = "{marketplace.as_posix()}"\n'
     (home / "config.toml").write_text(text + marketplace_config, encoding="utf-8")
 
 
@@ -142,9 +148,7 @@ args = ["claims-mcp"]
     )
     stale = tmp_path / "plugins" / "cache" / "personal" / "harness4codex" / "1.0.0"
     stale_manifest = stale / ".codex-plugin" / "plugin.json"
-    stale_manifest.write_text(
-        json.dumps({"name": "harness4codex", "version": "0.4.0"}), encoding="utf-8"
-    )
+    stale_manifest.write_text(json.dumps({"name": "harness4codex", "version": "0.4.0"}), encoding="utf-8")
 
     report = run_doctor(
         tmp_path,
@@ -174,12 +178,8 @@ command = "shs"
 args = ["claims-mcp"]
 """,
     )
-    source_manifest = (
-        tmp_path / "marketplace" / "plugins" / "harness4codex" / ".codex-plugin" / "plugin.json"
-    )
-    source_manifest.write_text(
-        json.dumps({"name": "harness4codex", "version": "0.9.0"}), encoding="utf-8"
-    )
+    source_manifest = tmp_path / "marketplace" / "plugins" / "harness4codex" / ".codex-plugin" / "plugin.json"
+    source_manifest.write_text(json.dumps({"name": "harness4codex", "version": "0.9.0"}), encoding="utf-8")
 
     report = run_doctor(
         tmp_path,

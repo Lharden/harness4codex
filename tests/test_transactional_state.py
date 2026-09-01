@@ -152,13 +152,23 @@ def test_latest_failing_test_revokes_passing_evidence_for_same_revision(tmp_path
     task = db.transition(task["task_id"], "tdd", expected_revision=task["revision"])
     task = db.transition(task["task_id"], "verify", expected_revision=task["revision"])
     task = db.record_evidence(
-        task["task_id"], evidence_type="test", command="pytest -q", exit_code=0,
-        tests_collected=4, tests_passed=4, output_hash="passing",
+        task["task_id"],
+        evidence_type="test",
+        command="pytest -q",
+        exit_code=0,
+        tests_collected=4,
+        tests_passed=4,
+        output_hash="passing",
     )
 
     task = db.record_evidence(
-        task["task_id"], evidence_type="test", command="pytest -q", exit_code=1,
-        tests_collected=4, tests_passed=3, output_hash="failing",
+        task["task_id"],
+        evidence_type="test",
+        command="pytest -q",
+        exit_code=1,
+        tests_collected=4,
+        tests_passed=3,
+        output_hash="failing",
     )
 
     assert task["verified"] is False
@@ -171,13 +181,23 @@ def test_non_test_evidence_does_not_revoke_latest_passing_test(tmp_path):
     db = HarnessDatabase(tmp_path)
     task = _start(db, level="C1", kind="bug")
     task = db.record_evidence(
-        task["task_id"], evidence_type="test", command="pytest -q", exit_code=0,
-        tests_collected=2, tests_passed=2, output_hash="passing",
+        task["task_id"],
+        evidence_type="test",
+        command="pytest -q",
+        exit_code=0,
+        tests_collected=2,
+        tests_passed=2,
+        output_hash="passing",
     )
 
     task = db.record_evidence(
-        task["task_id"], evidence_type="review", command=None, exit_code=None,
-        tests_collected=None, tests_passed=None, output_hash="review",
+        task["task_id"],
+        evidence_type="review",
+        command=None,
+        exit_code=None,
+        tests_collected=None,
+        tests_passed=None,
+        output_hash="review",
     )
 
     assert task["verified"] is True

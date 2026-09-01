@@ -260,6 +260,7 @@ class MemoryConsolidator:
                 )
             if event_name == "Stop" and (payload.get("blocked") or "verification" in reason.lower()):
                 proposals["workflow-verification-reminder"] = (
-                    "Verification gate blocked completion. Consider adding explicit verification commands to WORKFLOW.md."
+                    "Verification gate blocked completion. Consider adding explicit "
+                    "verification commands to WORKFLOW.md."
                 )
         return [{"key": key, "value": value} for key, value in sorted(proposals.items())]

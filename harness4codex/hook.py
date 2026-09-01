@@ -409,12 +409,15 @@ def _handle_post_tool(event: str, payload: dict[str, Any], store: HarnessStateSt
     if promoted:
         return _context_output(
             event,
-            "HARNESS4CODEX promoted this task from C0 to C1 because edits touched three or more files. Use codex-harness-workflow and run verification-before-completion.",
+            "HARNESS4CODEX promoted this task from C0 to C1 because edits touched "
+            "three or more files. Use codex-harness-workflow and run "
+            "verification-before-completion.",
         )
     if verification_seen and exit_code is None:
         return _context_output(
             event,
-            "HARNESS4CODEX saw a verification command, but the hook could not confirm exit code 0. Read the tool output before marking the task verified.",
+            "HARNESS4CODEX saw a verification command, but the hook could not confirm "
+            "exit code 0. Read the tool output before marking the task verified.",
         )
     if verification_seen and exit_code == 0 and tests_collected == 0:
         return _context_output(
@@ -516,7 +519,7 @@ def _emit(output: str) -> None:
 def _log_boundary_error() -> None:
     try:
         HarnessStateStore().log_error(traceback.format_exc())
-    except Exception:  # noqa: BLE001 - the hook boundary must remain fail-open
+    except Exception:
         return
 
 
@@ -530,7 +533,7 @@ def main() -> int:
         if output:
             _emit(output)
         return 0
-    except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive hook boundary
+    except Exception as exc:  # pragma: no cover - defensive hook boundary
         _log_boundary_error()
         _emit(_error_output(str(exc)))
         return 0

@@ -2,10 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from pathlib import Path
 import subprocess
+from pathlib import Path
 from typing import Any
-
 
 IGNORED_PARTS = {".git", "graphify-out", ".venv", "venv", "node_modules", "__pycache__"}
 
@@ -29,9 +28,7 @@ def collect_graph_context(
         latest_source = _latest_source_mtime(root)
         freshness = "fresh" if graph.stat().st_mtime >= latest_source else "stale"
         if freshness == "stale":
-            exceptions.append(
-                {"code": "GRAPH_STALE", "message": "graph.json predates repository source files"}
-            )
+            exceptions.append({"code": "GRAPH_STALE", "message": "graph.json predates repository source files"})
     else:
         exceptions.append({"code": "GRAPH_MISSING", "message": "graphify-out/graph.json is absent"})
 

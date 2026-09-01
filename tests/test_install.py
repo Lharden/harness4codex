@@ -1,4 +1,3 @@
-
 import json
 import shutil
 import subprocess
@@ -17,8 +16,17 @@ def test_build_hooks_config_contains_all_core_events():
 
     hooks = config["hooks"]
     assert {
-        "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
-        "PreCompact", "PostCompact", "SubagentStart", "SubagentStop", "Stop", "SessionEnd",
+        "SessionStart",
+        "UserPromptSubmit",
+        "PreToolUse",
+        "PermissionRequest",
+        "PostToolUse",
+        "PreCompact",
+        "PostCompact",
+        "SubagentStart",
+        "SubagentStop",
+        "Stop",
+        "SessionEnd",
     } <= set(hooks)
     stop_command = hooks["Stop"][0]["hooks"][0]["command"]
     assert stop_command.startswith("python ")
@@ -109,9 +117,7 @@ def test_install_uses_native_plugin_hooks_and_removes_legacy_duplicate(tmp_path)
     (source / ".codex-plugin" / "plugin.json").write_text(
         json.dumps({"name": "harness4codex", "version": "1.0.0"}), encoding="utf-8"
     )
-    (source / "hooks" / "hooks.json").write_text(
-        json.dumps(build_hooks_config("hook.py")), encoding="utf-8"
-    )
+    (source / "hooks" / "hooks.json").write_text(json.dumps(build_hooks_config("hook.py")), encoding="utf-8")
     commands = []
 
     def native_runner(command, home):
@@ -136,9 +142,7 @@ def test_native_install_updates_local_marketplace_and_active_cache(tmp_path):
         json.dumps({"name": "harness4codex", "version": "2.0.0"}), encoding="utf-8"
     )
     (source / "hooks").mkdir()
-    (source / "hooks" / "hooks.json").write_text(
-        json.dumps(build_hooks_config("hook.py")), encoding="utf-8"
-    )
+    (source / "hooks" / "hooks.json").write_text(json.dumps(build_hooks_config("hook.py")), encoding="utf-8")
     (source / "hooks" / "codex_harness_hook.py").write_text("# hook\n", encoding="utf-8")
     (source / "skills" / "codex-harness-workflow").mkdir(parents=True)
     (source / "skills" / "codex-harness-workflow" / "SKILL.md").write_text("# skill\n", encoding="utf-8")
@@ -146,7 +150,7 @@ def test_native_install_updates_local_marketplace_and_active_cache(tmp_path):
     codex_home.mkdir()
     marketplace = tmp_path / "personal-marketplace"
     (codex_home / "config.toml").write_text(
-        '[features]\nhooks = true\n'
+        "[features]\nhooks = true\n"
         '[marketplaces.personal]\nsource_type = "local"\n'
         f'source = "{marketplace.as_posix()}"\n'
         '[plugins."harness4codex@personal"]\nenabled = true\n',
@@ -165,9 +169,7 @@ def test_native_install_updates_local_marketplace_and_active_cache(tmp_path):
     marketplace_plugin = marketplace / "plugins" / "harness4codex"
     assert json.loads((marketplace_plugin / ".codex-plugin" / "plugin.json").read_text())["version"] == "2.0.0"
     assert invoked == [(["codex", "plugin", "add", "harness4codex@personal", "--json"], codex_home)]
-    assert Path(result["active_plugin"]) == (
-        codex_home / "plugins" / "cache" / "personal" / "harness4codex" / "2.0.0"
-    )
+    assert Path(result["active_plugin"]) == (codex_home / "plugins" / "cache" / "personal" / "harness4codex" / "2.0.0")
 
 
 def test_install_uses_global_hooks_when_native_plugin_is_not_enabled(tmp_path):

@@ -180,9 +180,7 @@ def run_doctor(
     harness_selectors = [
         name
         for name, value in plugins.items()
-        if name.split("@", 1)[0] == "harness4codex"
-        and isinstance(value, dict)
-        and value.get("enabled") is True
+        if name.split("@", 1)[0] == "harness4codex" and isinstance(value, dict) and value.get("enabled") is True
     ]
     harness4codex_enabled = bool(harness_selectors)
     competing = [
@@ -240,7 +238,8 @@ def run_doctor(
                 DiagnosticCheck(
                     "ACTIVE_PLUGIN_STALE",
                     "fail",
-                    f"Active Harness4Codex is {active_manifest.get('version')}; marketplace source is {expected_version}.",
+                    f"Active Harness4Codex is {active_manifest.get('version')}; "
+                    f"marketplace source is {expected_version}.",
                 )
             )
         else:
@@ -291,17 +290,25 @@ def run_doctor(
     science = servers.get("science_harness") if isinstance(servers.get("science_harness"), dict) else None
     if science is None:
         checks.append(
-            DiagnosticCheck("SCIENCE_MCP_MISSING", "fail", "Register the science_harness MCP server with `shs claims-mcp`.")
+            DiagnosticCheck(
+                "SCIENCE_MCP_MISSING", "fail", "Register the science_harness MCP server with `shs claims-mcp`."
+            )
         )
     else:
         command = str(science.get("command") or "")
         args = science.get("args") if isinstance(science.get("args"), list) else []
-        executable = str(Path(command).resolve()) if command and Path(command).is_absolute() and Path(command).exists() else which(command)
+        executable = (
+            str(Path(command).resolve())
+            if command and Path(command).is_absolute() and Path(command).exists()
+            else which(command)
+        )
         if executable and "claims-mcp" in args:
             checks.append(DiagnosticCheck("SCIENCE_MCP_READY", "pass", "Science Harness MCP is registered read-only."))
         else:
             checks.append(
-                DiagnosticCheck("SCIENCE_MCP_INVALID", "fail", "science_harness must run an available `shs claims-mcp` command.")
+                DiagnosticCheck(
+                    "SCIENCE_MCP_INVALID", "fail", "science_harness must run an available `shs claims-mcp` command."
+                )
             )
 
     if process_env.get("HARNESS_CONTROL_TOKEN"):
@@ -350,9 +357,15 @@ def run_doctor(
 
     snapshot = ContractSnapshot.load()
     if snapshot.verify_lock():
-        checks.append(DiagnosticCheck("CONTRACT_LOCK_VALID", "pass", f"Harness4Contract {snapshot.version} lock is valid."))
+        checks.append(
+            DiagnosticCheck("CONTRACT_LOCK_VALID", "pass", f"Harness4Contract {snapshot.version} lock is valid.")
+        )
     else:
-        checks.append(DiagnosticCheck("CONTRACT_LOCK_INVALID", "fail", "Vendored Harness4Contract snapshot does not match its lock."))
+        checks.append(
+            DiagnosticCheck(
+                "CONTRACT_LOCK_INVALID", "fail", "Vendored Harness4Contract snapshot does not match its lock."
+            )
+        )
 
     inspected_plugin = active_plugin or expected_plugin or Path(__file__).resolve().parents[1]
     registered = _registered_hooks(inspected_plugin)

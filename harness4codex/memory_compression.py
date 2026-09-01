@@ -30,8 +30,10 @@ def compress_memory_file(path: str | Path, *, dry_run: bool = False) -> dict[str
     if target.name.casefold() in PROTECTED_NAMES or "docs/specs" in target.as_posix().casefold():
         raise CompressionError(f"protected memory file: {target}")
     text = target.read_text(encoding="utf-8")
-    if re.search(r"\bREQ-\d+\b", text) or all(marker in text for marker in ("Given", "When", "Then")) or any(
-        marker in text for marker in SPEC_MARKERS[:1]
+    if (
+        re.search(r"\bREQ-\d+\b", text)
+        or all(marker in text for marker in ("Given", "When", "Then"))
+        or any(marker in text for marker in SPEC_MARKERS[:1])
     ):
         raise CompressionError("specification markers make this file protected")
     output = _compress(text)

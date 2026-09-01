@@ -50,9 +50,27 @@ def build_hooks_config(hook_path: str | os.PathLike[str]) -> dict[str, Any]:
         "hooks": {
             "SessionStart": [_hook_entry(hook_path, "Harness4Codex session", "startup|resume|clear")],
             "UserPromptSubmit": [_hook_entry(hook_path, "Harness4Codex classify")],
-            "PreToolUse": [_hook_entry(hook_path, "Harness4Codex guard", "Bash|shell_command|exec_command|functions.exec|functions.exec_command|apply_patch")],
-            "PermissionRequest": [_hook_entry(hook_path, "Harness4Codex permission", "Bash|shell_command|exec_command|functions.exec|functions.exec_command")],
-            "PostToolUse": [_hook_entry(hook_path, "Harness4Codex state", "Bash|shell_command|exec_command|functions.exec|functions.exec_command|apply_patch")],
+            "PreToolUse": [
+                _hook_entry(
+                    hook_path,
+                    "Harness4Codex guard",
+                    "Bash|shell_command|exec_command|functions.exec|functions.exec_command|apply_patch",
+                )
+            ],
+            "PermissionRequest": [
+                _hook_entry(
+                    hook_path,
+                    "Harness4Codex permission",
+                    "Bash|shell_command|exec_command|functions.exec|functions.exec_command",
+                )
+            ],
+            "PostToolUse": [
+                _hook_entry(
+                    hook_path,
+                    "Harness4Codex state",
+                    "Bash|shell_command|exec_command|functions.exec|functions.exec_command|apply_patch",
+                )
+            ],
             "PreCompact": [_hook_entry(hook_path, "Harness4Codex handoff")],
             "PostCompact": [_hook_entry(hook_path, "Harness4Codex restore")],
             "SubagentStart": [_hook_entry(hook_path, "Harness4Codex node start")],
@@ -91,7 +109,9 @@ def ensure_feature_flag(text: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def merge_hooks_config(existing: dict[str, Any], new: dict[str, Any], hook_path: str | os.PathLike[str]) -> dict[str, Any]:
+def merge_hooks_config(
+    existing: dict[str, Any], new: dict[str, Any], hook_path: str | os.PathLike[str]
+) -> dict[str, Any]:
     merged = existing.copy() if isinstance(existing, dict) else {}
     merged_hooks = dict(merged.get("hooks") or {})
     marker = str(hook_path)

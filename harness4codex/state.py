@@ -13,7 +13,7 @@ from pathlib import Path
 
 from .classifier import BUG_PIPELINE, Classification
 from .contract import ContractSnapshot
-from .state_db import HarnessDatabase, StateTransitionError
+from .state_db import HarnessDatabase
 
 
 class HarnessStateError(RuntimeError):
@@ -95,9 +95,9 @@ class HarnessStateStore:
                     raise HarnessStateError(f"Timed out waiting for state lock: {self.lock_path}") from exc
                 time.sleep(0.01)
                 continue
-            except FileExistsError:
+            except FileExistsError as exc:
                 if time.monotonic() >= deadline:
-                    raise HarnessStateError(f"Timed out waiting for state lock: {self.lock_path}")
+                    raise HarnessStateError(f"Timed out waiting for state lock: {self.lock_path}") from exc
                 try:
                     age = time.time() - self.lock_path.stat().st_mtime
                     if age > 30:
@@ -245,9 +245,7 @@ class HarnessStateStore:
                 if state.get("pipeline"):
                     state["status"] = "active"
             transactional = (
-                self.database.touch_file(state["task_id"], normalized_path)
-                if state.get("task_id")
-                else None
+                self.database.touch_file(state["task_id"], normalized_path) if state.get("task_id") else None
             )
             if state.get("level") == "C0" and len(files) >= 3:
                 state["level"] = "C1"

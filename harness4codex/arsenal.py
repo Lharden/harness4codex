@@ -83,10 +83,13 @@ class ArsenalRegistry:
 
     def budget_report(self) -> dict[str, int | bool]:
         payload = self._load()
-        used = sum(
-            1 for tool in payload.get("tools", {}).values() if tool.get("status") in {"adopted", "trial"}
-        )
-        return {"budget": self.budget, "used": used, "available": max(self.budget - used, 0), "fits": used <= self.budget}
+        used = sum(1 for tool in payload.get("tools", {}).values() if tool.get("status") in {"adopted", "trial"})
+        return {
+            "budget": self.budget,
+            "used": used,
+            "available": max(self.budget - used, 0),
+            "fits": used <= self.budget,
+        }
 
     def check(self) -> dict[str, Any]:
         payload = self._load()
