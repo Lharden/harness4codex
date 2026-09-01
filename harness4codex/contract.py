@@ -30,7 +30,7 @@ class ContractSnapshot:
         self.lock = self._load("contract.lock.json")
 
     @classmethod
-    def load(cls) -> "ContractSnapshot":
+    def load(cls) -> ContractSnapshot:
         return cls(Path(__file__).parent / "_contract")
 
     @property
@@ -88,7 +88,7 @@ class ContractSnapshot:
             canonical = Path(str(relative)).as_posix()
             digest.update(canonical.encode("utf-8"))
             digest.update(b"\0")
-            digest.update(path.read_bytes())
+            digest.update(_snapshot_bytes(path))
             digest.update(b"\0")
         return digest.hexdigest() == self.lock.get("sha256") and self.lock.get("contract_version") == self.version
 
@@ -114,3 +114,18 @@ class ContractSnapshot:
         if not isinstance(value, dict):
             raise ContractSnapshotError(f"contract snapshot file must be an object: {path}")
         return value
+
+
+def _snapshot_bytes(path: Path) -> bytes:
+    if path.suffix.lower() != ".json":
+        return path.read_bytes()
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ContractSnapshotError(f"invalid contract snapshot file {path}: {exc}") from exc
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
