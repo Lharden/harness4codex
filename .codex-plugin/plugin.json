@@ -1,6 +1,6 @@
 {
   "name": "harness4codex",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Contract-backed Codex workflow harness with transactional SDD, evidence, memory, graph and branch orchestration.",
   "author": {
     "name": "Lharden"

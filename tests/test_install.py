@@ -3,8 +3,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from scripts.install import (
     _default_native_runner,
+    _validate_active_plugin,
     build_hooks_config,
     ensure_feature_flag,
     install,
@@ -191,6 +194,83 @@ def test_native_install_updates_local_marketplace_and_active_cache(tmp_path):
     assert Path(result["active_plugin"]) == (codex_home / "plugins" / "cache" / "personal" / "harness4codex" / "2.0.0")
 
 
+def test_install_bootstraps_native_marketplace_and_plugin_on_clean_home(tmp_path):
+    source = tmp_path / "source"
+    (source / ".codex-plugin").mkdir(parents=True)
+    (source / ".codex-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "harness4codex", "version": "2.0.0"}), encoding="utf-8"
+    )
+    (source / "hooks").mkdir()
+    (source / "hooks" / "hooks.json").write_text(
+        json.dumps(build_hooks_config("hook.py")), encoding="utf-8"
+    )
+    (source / "hooks" / "codex_harness_hook.py").write_text("# hook\n", encoding="utf-8")
+    (source / "harness4codex").mkdir()
+    (source / "harness4codex" / "core.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (source / "skills" / "codex-harness-workflow").mkdir(parents=True)
+    (source / "skills" / "codex-harness-workflow" / "SKILL.md").write_text(
+        "# skill\n", encoding="utf-8"
+    )
+    codex_home = tmp_path / "codex"
+    commands = []
+
+    def native_runner(command, home):
+        commands.append(command)
+        if command[1:3] == ["plugin", "add"]:
+            marketplace = home / "marketplaces" / "harness4codex-local"
+            cached = home / "plugins" / "cache" / "harness4codex-local" / "harness4codex" / "2.0.0"
+            shutil.copytree(marketplace / "plugins" / "harness4codex", cached)
+        return subprocess.CompletedProcess(command, 0, stdout="{}", stderr="")
+
+    result = install(source, codex_home, native_runner=native_runner)
+
+    assert result["hook_mode"] == "plugin"
+    assert commands == [
+        ["codex", "plugin", "--help"],
+        [
+            "codex",
+            "plugin",
+            "marketplace",
+            "add",
+            str(codex_home / "marketplaces" / "harness4codex-local"),
+            "--json",
+        ],
+        ["codex", "plugin", "add", "harness4codex@harness4codex-local", "--json"],
+    ]
+    config = (codex_home / "config.toml").read_text(encoding="utf-8")
+    assert '[plugins."harness4codex@harness4codex-local"]' in config
+    marketplace_manifest = json.loads(
+        (
+            codex_home
+            / "marketplaces"
+            / "harness4codex-local"
+            / ".agents"
+            / "plugins"
+            / "marketplace.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert marketplace_manifest["plugins"][0]["source"]["path"] == "./plugins/harness4codex"
+
+
+def test_active_plugin_validation_rejects_same_version_with_stale_core(tmp_path):
+    source = tmp_path / "source"
+    active = tmp_path / "active"
+    for root in (source, active):
+        (root / ".codex-plugin").mkdir(parents=True)
+        (root / ".codex-plugin" / "plugin.json").write_text(
+            json.dumps({"name": "harness4codex", "version": "2.0.0"}), encoding="utf-8"
+        )
+        (root / "hooks").mkdir()
+        (root / "hooks" / "hooks.json").write_text("{}\n", encoding="utf-8")
+        (root / "hooks" / "codex_harness_hook.py").write_text("# hook\n", encoding="utf-8")
+        (root / "harness4codex").mkdir()
+        (root / "harness4codex" / "core.py").write_text("VALUE = 1\n", encoding="utf-8")
+    (active / "harness4codex" / "core.py").write_text("VALUE = 0\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="content fingerprint"):
+        _validate_active_plugin(source, active)
+
+
 def test_install_uses_global_hooks_when_native_plugin_is_not_enabled(tmp_path):
     source = tmp_path / "source"
     (source / "hooks").mkdir(parents=True)
@@ -199,7 +279,10 @@ def test_install_uses_global_hooks_when_native_plugin_is_not_enabled(tmp_path):
     (source / "skills" / "codex-harness-workflow" / "SKILL.md").write_text("# skill\n", encoding="utf-8")
     codex_home = tmp_path / "codex"
 
-    result = install(source, codex_home)
+    def unsupported(command, _home):
+        return subprocess.CompletedProcess(command, 2, stdout="", stderr="unknown command: plugin")
+
+    result = install(source, codex_home, native_runner=unsupported)
 
     installed = json.loads((codex_home / "hooks.json").read_text(encoding="utf-8"))
     commands = [hook["command"] for entry in installed["hooks"]["Stop"] for hook in entry["hooks"]]

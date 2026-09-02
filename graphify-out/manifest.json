@@ -1,12 +1,12 @@
 {
   ".codex-plugin/plugin.json": {
-    "mtime": 1788214345.9827342,
-    "ast_hash": "bf66703f4c83cf5f502d3a5774b566c6",
+    "mtime": 1788342605.853567,
+    "ast_hash": "0e2a763938b1c6c7dd1c317007e2de82",
     "semantic_hash": ""
   },
   "harness4codex/__init__.py": {
-    "mtime": 1788214346.0767188,
-    "ast_hash": "7f23ab7c1c723182b32bcf1daa37f583",
+    "mtime": 1788342605.8694153,
+    "ast_hash": "0e4b2f44be581be79ec47e00c5b907a9",
     "semantic_hash": ""
   },
   "harness4codex/__main__.py": {
@@ -25,8 +25,8 @@
     "semantic_hash": ""
   },
   "harness4codex/diagnostics.py": {
-    "mtime": 1788296286.0481322,
-    "ast_hash": "a7631d7faee6a19673e6fb91bd3a2451",
+    "mtime": 1788343409.5383632,
+    "ast_hash": "cb080f6beb6d4b501cf63dacbc0fe45c",
     "semantic_hash": ""
   },
   "harness4codex/git_guard.py": {
@@ -80,8 +80,8 @@
     "semantic_hash": ""
   },
   "pyproject.toml": {
-    "mtime": 1788296286.0600293,
-    "ast_hash": "fb5eb41f23624b74d135882b797348c3",
+    "mtime": 1788342605.853567,
+    "ast_hash": "98ddac2359ea5eec244eb350a18477eb",
     "semantic_hash": ""
   },
   "scripts/__init__.py": {
@@ -95,8 +95,8 @@
     "semantic_hash": ""
   },
   "scripts/install.py": {
-    "mtime": 1788298599.8734353,
-    "ast_hash": "69a4b8e5eb013ac39501ee6967a74c21",
+    "mtime": 1788343062.9056373,
+    "ast_hash": "94fd8a7985b9bd64a919f4f6c00c4bad",
     "semantic_hash": ""
   },
   "scripts/install.sh": {
@@ -115,8 +115,8 @@
     "semantic_hash": ""
   },
   "tests/test_diagnostics.py": {
-    "mtime": 1788296238.3281984,
-    "ast_hash": "5c724cf9d7312df352eeac7d303321c9",
+    "mtime": 1788343378.8857036,
+    "ast_hash": "81eb550a1629780053801cde2f4796b5",
     "semantic_hash": ""
   },
   "tests/test_git_guard.py": {
@@ -135,8 +135,8 @@
     "semantic_hash": ""
   },
   "tests/test_install.py": {
-    "mtime": 1788298578.9288316,
-    "ast_hash": "a6a0188a8e966220a71b00833d77c127",
+    "mtime": 1788342336.075277,
+    "ast_hash": "525aa52b838a0f43c735e2684e93190a",
     "semantic_hash": ""
   },
   "tests/test_memory.py": {
@@ -150,8 +150,8 @@
     "semantic_hash": ""
   },
   "tests/test_packaging.py": {
-    "mtime": 1788268995.970934,
-    "ast_hash": "dc4a63a426322e0bfabf998354a38483",
+    "mtime": 1788342578.3335497,
+    "ast_hash": "b1d0714635416020b4a38530ad6d35f1",
     "semantic_hash": ""
   },
   "tests/test_science_adapter.py": {
@@ -220,8 +220,8 @@
     "semantic_hash": ""
   },
   "harness4codex/_contract/contract.lock.json": {
-    "mtime": 1788295097.5481071,
-    "ast_hash": "47477a298b7dcc192c9bc0419ff39a25",
+    "mtime": 1788342750.7957792,
+    "ast_hash": "a3789f7a7843c4f6de72fc0020dd1e6e",
     "semantic_hash": ""
   },
   "harness4codex/_contract/fixtures/classification.json": {
@@ -455,13 +455,18 @@
     "semantic_hash": ""
   },
   "harness4codex/_contract/behavioral-probes.json": {
-    "mtime": 1788295075.0296009,
-    "ast_hash": "75d4d88ca30d07cf903b32097b7a890b",
+    "mtime": 1788342702.2189784,
+    "ast_hash": "98d42ec6ee056eccc2189a0e6c3dddc5",
     "semantic_hash": ""
   },
   ".github/workflows/ci.yml": {
     "mtime": 1788296214.3806329,
     "ast_hash": "59378ee141466480097f0dfe055a759e",
+    "semantic_hash": ""
+  },
+  "harness4codex/plugin_identity.py": {
+    "mtime": 1788342486.1308796,
+    "ast_hash": "e9ac13f1ebb73ec0fbb84dd466a2a15b",
     "semantic_hash": ""
   }
 }

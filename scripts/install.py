@@ -6,10 +6,16 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import uuid
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from harness4codex.plugin_identity import plugin_fingerprint  # noqa: E402
 
 EVENTS = [
     "SessionStart",
@@ -234,11 +240,55 @@ def _validate_active_plugin(source: Path, active: Path) -> None:
         raise RuntimeError(
             f"Codex activated Harness4Codex {active_manifest['version']}; expected {source_manifest['version']}"
         )
-    for relative in (Path("hooks/hooks.json"), Path("hooks/codex_harness_hook.py")):
-        source_file = source / relative
-        active_file = active / relative
-        if not active_file.is_file() or active_file.read_bytes() != source_file.read_bytes():
-            raise RuntimeError(f"Codex active plugin differs from marketplace source: {relative.as_posix()}")
+    if plugin_fingerprint(active) != plugin_fingerprint(source):
+        raise RuntimeError("Codex active plugin content fingerprint differs from marketplace source")
+
+
+def _native_plugins_supported(
+    native_runner: Callable[[list[str], Path], subprocess.CompletedProcess[str]], codex_home: Path
+) -> bool:
+    try:
+        return native_runner(["codex", "plugin", "--help"], codex_home).returncode == 0
+    except (OSError, RuntimeError):
+        return False
+
+
+def _write_marketplace_manifest(root: Path, marketplace_name: str) -> None:
+    path = root / ".agents" / "plugins" / "marketplace.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "name": marketplace_name,
+        "interface": {"displayName": "Harness4Codex Local"},
+        "plugins": [
+            {
+                "name": "harness4codex",
+                "source": {"source": "local", "path": "./plugins/harness4codex"},
+            }
+        ],
+    }
+    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def ensure_native_plugin_configuration(
+    text: str, marketplace_name: str, marketplace_root: Path
+) -> str:
+    result = text
+    marketplace_header = f"[marketplaces.{marketplace_name}]"
+    if marketplace_header not in result:
+        if result and not result.endswith("\n"):
+            result += "\n"
+        result += (
+            f"\n{marketplace_header}\n"
+            "source_type = \"local\"\n"
+            f"source = {json.dumps(str(marketplace_root))}\n"
+        )
+    selector = f'harness4codex@{marketplace_name}'
+    plugin_header = f'[plugins."{selector}"]'
+    if plugin_header not in result:
+        if result and not result.endswith("\n"):
+            result += "\n"
+        result += f"\n{plugin_header}\nenabled = true\n"
+    return result
 
 
 def _ignore_copy(dir_path: str, names: list[str]) -> set[str]:
@@ -294,9 +344,20 @@ def install(
     config_path = codex_home / "config.toml"
     config_text = config_path.read_text(encoding="utf-8") if config_path.exists() else ""
     selector = native_plugin_selector(config_text)
+    bootstrap_native = False
+    if selector is None and not dry_run and (source / ".codex-plugin" / "plugin.json").is_file():
+        if _native_plugins_supported(native_runner, codex_home):
+            marketplace_name = "harness4codex-local"
+            marketplace_root = codex_home / "marketplaces" / marketplace_name
+            selector = f"harness4codex@{marketplace_name}"
+            bootstrap_native = True
+        else:
+            marketplace_name = ""
+            marketplace_root = None
+    else:
+        marketplace_name = selector.split("@", 1)[1] if selector and "@" in selector else ""
+        marketplace_root = local_marketplace_source(config_text, marketplace_name) if marketplace_name else None
     hook_mode = "plugin" if selector else "global"
-    marketplace_name = selector.split("@", 1)[1] if selector and "@" in selector else ""
-    marketplace_root = local_marketplace_source(config_text, marketplace_name) if marketplace_name else None
     plugin_dest = codex_home / "plugins" / "harness4codex"
     if hook_mode == "plugin":
         if marketplace_root is None:
@@ -333,6 +394,19 @@ def install(
     codex_home.mkdir(parents=True, exist_ok=True)
     _atomic_copytree(source, plugin_dest, ignore=_ignore_copy)
 
+    if bootstrap_native:
+        assert marketplace_root is not None
+        _write_marketplace_manifest(marketplace_root, marketplace_name)
+        marketplace_result = native_runner(
+            ["codex", "plugin", "marketplace", "add", str(marketplace_root), "--json"],
+            codex_home,
+        )
+        if marketplace_result.returncode != 0:
+            detail = marketplace_result.stderr.strip() or marketplace_result.stdout.strip()
+            raise RuntimeError(
+                f"Codex native marketplace bootstrap failed ({marketplace_result.returncode}): {detail}"
+            )
+
     if hook_mode == "global":
         for skill_source in sorted((source / "skills").iterdir()):
             if skill_source.is_dir() and (skill_source / "SKILL.md").exists():
@@ -348,6 +422,14 @@ def install(
             detail = native_result.stderr.strip() or native_result.stdout.strip()
             raise RuntimeError(f"Codex native plugin install failed ({native_result.returncode}): {detail}")
         _validate_active_plugin(plugin_dest, active_plugin)
+        if bootstrap_native:
+            assert marketplace_root is not None
+            config_text = ensure_native_plugin_configuration(
+                config_path.read_text(encoding="utf-8") if config_path.exists() else config_text,
+                marketplace_name,
+                marketplace_root,
+            )
+            config_path.write_text(config_text, encoding="utf-8")
         if hooks_config_path.exists():
             cleaned_hooks = remove_harness_hooks(existing_hooks)
             hooks_config_path.write_text(json.dumps(cleaned_hooks, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -356,7 +438,8 @@ def install(
         merged_hooks = merge_hooks_config(existing_hooks, new_hooks, hook_path)
         hooks_config_path.write_text(json.dumps(merged_hooks, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    config_path.write_text(ensure_feature_flag(config_text), encoding="utf-8")
+    latest_config = config_path.read_text(encoding="utf-8") if config_path.exists() else config_text
+    config_path.write_text(ensure_feature_flag(latest_config), encoding="utf-8")
 
     return result
 

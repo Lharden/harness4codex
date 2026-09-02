@@ -14,6 +14,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 C
     import tomli as tomllib
 
 from .contract import ContractSnapshot
+from .plugin_identity import plugin_fingerprint
 
 REQUIRED_HOOKS = {
     "SessionStart",
@@ -116,6 +117,32 @@ def _registered_hooks(plugin_root: Path) -> set[str]:
         return set()
     hooks = payload.get("hooks") if isinstance(payload, dict) else None
     return set(hooks) if isinstance(hooks, dict) else set()
+
+
+def _hooks_without_commands(plugin_root: Path) -> set[str]:
+    try:
+        payload = json.loads((plugin_root / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set(REQUIRED_HOOKS)
+    hooks = payload.get("hooks") if isinstance(payload, dict) else None
+    if not isinstance(hooks, dict):
+        return set(REQUIRED_HOOKS)
+    invalid: set[str] = set()
+    for event in REQUIRED_HOOKS & set(hooks):
+        groups = hooks.get(event)
+        commands = []
+        if isinstance(groups, list):
+            for group in groups:
+                handlers = group.get("hooks") if isinstance(group, dict) else None
+                if isinstance(handlers, list):
+                    commands.extend(
+                        handler.get("command")
+                        for handler in handlers
+                        if isinstance(handler, dict) and isinstance(handler.get("command"), str)
+                    )
+        if not any(command.strip() for command in commands):
+            invalid.add(event)
+    return invalid
 
 
 def _state_database_checks(home: Path) -> list[DiagnosticCheck]:
@@ -240,6 +267,22 @@ def run_doctor(
                     "fail",
                     f"Active Harness4Codex is {active_manifest.get('version')}; "
                     f"marketplace source is {expected_version}.",
+                )
+            )
+        elif plugin_fingerprint(active_plugin) != plugin_fingerprint(expected_plugin):
+            checks.append(
+                DiagnosticCheck(
+                    "ACTIVE_PLUGIN_CONTENT_MISMATCH",
+                    "fail",
+                    "Active Harness4Codex content fingerprint differs from the configured marketplace source.",
+                )
+            )
+        elif source_root is not None and plugin_fingerprint(runtime_source) != plugin_fingerprint(expected_plugin):
+            checks.append(
+                DiagnosticCheck(
+                    "MARKETPLACE_SOURCE_CONTENT_STALE",
+                    "fail",
+                    "Configured marketplace content differs from the explicitly inspected source.",
                 )
             )
         else:
@@ -370,12 +413,32 @@ def run_doctor(
     inspected_plugin = active_plugin or expected_plugin or Path(__file__).resolve().parents[1]
     registered = _registered_hooks(inspected_plugin)
     missing_hooks = sorted(REQUIRED_HOOKS - registered)
+    empty_hooks = sorted(_hooks_without_commands(inspected_plugin))
+    runtime_wrapper_missing = not (
+        inspected_plugin / "hooks" / "codex_harness_hook.py"
+    ).is_file()
     if missing_hooks:
         checks.append(
             DiagnosticCheck(
                 "LIFECYCLE_HOOKS_INCOMPLETE",
                 "fail",
                 f"Active plugin is missing lifecycle hooks: {missing_hooks}",
+            )
+        )
+    elif runtime_wrapper_missing:
+        checks.append(
+            DiagnosticCheck(
+                "FULL_LIFECYCLE_HOOKS",
+                "fail",
+                "Lifecycle handlers are registered but their runtime wrapper is missing.",
+            )
+        )
+    elif empty_hooks:
+        checks.append(
+            DiagnosticCheck(
+                "FULL_LIFECYCLE_HOOKS",
+                "fail",
+                f"Active plugin has lifecycle events without command handlers: {empty_hooks}",
             )
         )
     else:

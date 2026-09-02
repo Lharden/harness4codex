@@ -140,4 +140,4 @@ def test_release_version_is_synchronized():
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)
 
-    assert manifest["version"] == project["project"]["version"] == __version__ == "1.0.0"
+    assert manifest["version"] == project["project"]["version"] == __version__ == "1.1.0"
