@@ -22,16 +22,50 @@ CODEX_ALIASES = {
 KIND_ALIASES = {"api-docs": "docs", "documentation": "docs", "escalated-edit": "bug"}
 
 
+def arvore_do_contrato() -> tuple[Path, str]:
+    """Devolve (arvore, origem): de onde o contrato foi lido, e por que dali.
+
+    Ate 2026-09-05 a arvore era sempre a copia adjacente
+    (`Path(__file__).parent / '_contract'`). Havia onze arvores de contrato na
+    maquina e nenhuma linha de codigo elegendo dona — cada programa se amarrava
+    a vizinha por `__file__`, sem script de sincronizacao entre elas.
+
+    Agora prefere a canonica declarada no `master-harness`, mas **cai no vizinho
+    em qualquer tropeco**: `mh` nao instalado, flag em `vizinho`, canonica
+    ausente. Dependencia dura sobre o `mh` seria trocar duplicidade por
+    fragilidade, e quem instala este plugin numa maquina limpa nao tem
+    `master-harness`.
+
+    A origem viaja junto de proposito: cair para o vizinho em silencio deixaria
+    dois relatorios indistinguiveis, e a diferenca entre eles e exatamente o que
+    esta migracao muda.
+    """
+    vizinho = Path(__file__).parent / "_contract"
+    try:
+        from mh import contrato as _mh_contrato
+        from mh import flags as _mh_flags
+
+        if _mh_flags.get("contrato") == "vizinho":
+            return vizinho, "vizinho:flag"
+        if (_mh_contrato.CANONICA / "capabilities.json").is_file():
+            return _mh_contrato.CANONICA, "mh"
+        return vizinho, "vizinho:canonica-ausente"
+    except Exception as exc:  # noqa: BLE001 - o fallback nao pode ter buraco
+        return vizinho, f"vizinho:{type(exc).__name__}"
+
+
 class ContractSnapshot:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, origem: str = "explicita"):
         self.root = root.resolve()
+        self.origem = origem
         self.capabilities = self._load("capabilities.json")
         self.pipelines = self._load("pipelines.json")
         self.lock = self._load("contract.lock.json")
 
     @classmethod
     def load(cls) -> ContractSnapshot:
-        return cls(Path(__file__).parent / "_contract")
+        arvore, origem = arvore_do_contrato()
+        return cls(arvore, origem)
 
     @property
     def version(self) -> str:
@@ -95,6 +129,10 @@ class ContractSnapshot:
     def capability_report(self, evidence: dict[str, list[str]]) -> dict[str, Any]:
         return {
             "contract_version": self.version,
+            # De qual arvore este relatorio saiu. Sem isto, um relatorio lido da
+            # canonica e um lido do vizinho sao indistinguiveis — e a diferenca
+            # entre os dois e justamente o que esta migracao muda.
+            "contract_origem": self.origem,
             "adapter": "harness4codex",
             "capabilities": {
                 capability: {
