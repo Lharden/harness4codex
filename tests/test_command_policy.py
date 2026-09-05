@@ -2,7 +2,7 @@ from harness4codex.command_policy import evaluate_command
 
 
 def test_quoted_git_text_is_not_treated_as_execution():
-    decision = evaluate_command('python -c "print(\'git reset --hard\')"')
+    decision = evaluate_command("python -c \"print('git reset --hard')\"")
 
     assert decision.action == "allow"
 

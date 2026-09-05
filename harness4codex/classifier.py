@@ -137,7 +137,9 @@ def classify_prompt(prompt: str) -> Classification:
 
     architecture_hits = _matches(ARCHITECTURE_PATTERNS, text)
     if architecture_hits:
-        return Classification("C3", "architecture", ARCHITECTURE_PIPELINE.copy(), architecture_hits + reasons, is_task_switch)
+        return Classification(
+            "C3", "architecture", ARCHITECTURE_PIPELINE.copy(), architecture_hits + reasons, is_task_switch
+        )
 
     bug_hits = _matches(BUG_PATTERNS, text)
     if bug_hits:
@@ -147,4 +149,4 @@ def classify_prompt(prompt: str) -> Classification:
     if feature_hits:
         return Classification("C2", "feature", FEATURE_PIPELINE.copy(), feature_hits + reasons, is_task_switch)
 
-    return Classification("C0", "question", [], ["no implementation signal"] + reasons, is_task_switch)
+    return Classification("C0", "question", [], ["no implementation signal", *reasons], is_task_switch)

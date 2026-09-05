@@ -1,16 +1,16 @@
-# Graph Report - equipotence-v1  (2026-08-31)
+# Graph Report - operational-equipotence  (2026-09-02)
 
 ## Corpus Check
-- 90 files · ~31,538 words
+- 92 files · ~34,870 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 1068 nodes · 1969 edges · 89 communities (65 shown, 24 thin omitted)
-- Extraction: 96% EXTRACTED · 4% INFERRED · 0% AMBIGUOUS · INFERRED: 87 edges (avg confidence: 0.66)
+- 1103 nodes · 2094 edges · 83 communities (63 shown, 20 thin omitted)
+- Extraction: 97% EXTRACTED · 3% INFERRED · 0% AMBIGUOUS · INFERRED: 61 edges (avg confidence: 0.61)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `0715d418`
+- Built from commit: `f12a6207`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -96,52 +96,47 @@
 - write-spec/SKILL.md
 - Any
 - Path
-- Path
-- Any
-- Path
-- ValueError
-- science_context
 
 ## God Nodes (most connected - your core abstractions)
-1. `HarnessDatabase` - 79 edges
+1. `HarnessDatabase` - 81 edges
 2. `HarnessStateStore` - 65 edges
-3. `handle_payload()` - 37 edges
-4. `StateTransitionError` - 32 edges
+3. `handle_payload()` - 38 edges
+4. `StateTransitionError` - 30 edges
 5. `_build_parser()` - 29 edges
 6. `HarnessMemoryStore` - 28 edges
-7. `ContractSnapshot` - 24 edges
-8. `Classification` - 19 edges
-9. `BranchKeeper` - 18 edges
-10. `utc_now()` - 18 edges
+7. `run_doctor()` - 26 edges
+8. `ContractSnapshot` - 24 edges
+9. `install()` - 23 edges
+10. `Classification` - 19 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `test_lite_client_refuses_to_send_the_control_token_off_loopback()` --calls--> `HarnessLiteClient`  [INFERRED]
-  tests/test_harness_lite_adapter.py → harness4codex/harness_lite_adapter.py
-- `test_preview_envelope_matches_harness_lite_task_envelope_v1()` --calls--> `build_task_envelope()`  [INFERRED]
-  tests/test_harness_lite_adapter.py → harness4codex/harness_lite_adapter.py
-- `test_read_only_envelope_declares_no_write_globs()` --calls--> `build_task_envelope()`  [INFERRED]
-  tests/test_harness_lite_adapter.py → harness4codex/harness_lite_adapter.py
-- `test_same_envelope_inputs_produce_same_idempotency_key()` --calls--> `build_task_envelope()`  [INFERRED]
-  tests/test_harness_lite_adapter.py → harness4codex/harness_lite_adapter.py
-- `test_retry_backoff_is_exponential_and_capped()` --calls--> `OrchestrationPolicy`  [INFERRED]
-  tests/test_orchestration.py → harness4codex/orchestration.py
+- `test_census_requires_satisfied_dependencies_for_completion()` --indirect_call--> `WorkflowContractError`  [INFERRED]
+  tests/test_agent_workflows.py → harness4codex/agent_workflows.py
+- `test_node_result_contract_rejects_unknown_duplicate_and_unsupported_status()` --indirect_call--> `WorkflowContractError`  [INFERRED]
+  tests/test_agent_workflows.py → harness4codex/agent_workflows.py
+- `test_absorbed_capability_requires_existing_destination()` --indirect_call--> `ArsenalError`  [INFERRED]
+  tests/test_arsenal.py → harness4codex/arsenal.py
+- `test_arsenal_validates_vocab_overlap_and_budget()` --indirect_call--> `ArsenalError`  [INFERRED]
+  tests/test_arsenal.py → harness4codex/arsenal.py
+- `test_branch_limits_and_topic_deduplication()` --indirect_call--> `BranchPolicyError`  [INFERRED]
+  tests/test_branches.py → harness4codex/branches.py
 
 ## Import Cycles
 - None detected.
 
-## Communities (89 total, 24 thin omitted)
+## Communities (83 total, 20 thin omitted)
 
 ### Community 0 - "hook.py"
-Cohesion: 0.09
-Nodes (64): _append_lite_preview(), _append_science_context(), _append_workflow_context(), _block_stop(), _classification_context(), _command_from_payload(), _context_output(), _cwd_from_payload() (+56 more)
+Cohesion: 0.08
+Nodes (67): _append_lite_preview(), _append_science_context(), _append_workflow_context(), _block_stop(), _classification_context(), _command_from_payload(), _context_output(), _cwd_from_payload() (+59 more)
 
 ### Community 1 - "cli.py"
 Cohesion: 0.12
-Nodes (23): build_task_envelope(), _canonical(), _digest(), evidence_bundle_is_acceptable(), git_base_revision(), HarnessLiteClient, lite_route_for(), LiteCallResult (+15 more)
+Nodes (24): build_task_envelope(), _canonical(), _digest(), evidence_bundle_is_acceptable(), execution_is_enabled(), HarnessLiteClient, lite_route_for(), LiteCallResult (+16 more)
 
 ### Community 2 - "HarnessStateStore"
-Cohesion: 0.09
-Nodes (39): Classification, run(), default_harness_home(), default_state(), HarnessStateStore, list_session_states(), Path, PathLike (+31 more)
+Cohesion: 0.08
+Nodes (41): Classification, run(), default_harness_home(), default_state(), HarnessStateError, HarnessStateStore, list_session_states(), Path (+33 more)
 
 ### Community 3 - "HarnessMemoryStore"
 Cohesion: 0.16
@@ -152,16 +147,16 @@ Cohesion: 0.08
 Nodes (41): BranchKeeper, BranchPolicyError, _jaccard(), _normalize(), Any, Path, ValueError, _slug() (+33 more)
 
 ### Community 5 - "install"
-Cohesion: 0.17
-Nodes (24): _atomic_copytree(), build_hooks_config(), ensure_feature_flag(), _hook_entry(), _ignore_copy(), install(), main(), merge_hooks_config() (+16 more)
+Cohesion: 0.13
+Nodes (37): CompletedProcess, _atomic_copytree(), build_hooks_config(), _default_native_runner(), ensure_feature_flag(), ensure_native_plugin_configuration(), _hook_entry(), _ignore_copy() (+29 more)
 
 ### Community 6 - "test_orchestration.py"
 Cohesion: 0.06
 Nodes (45): additionalProperties, type, type, type, type, $id, null, phase (+37 more)
 
 ### Community 7 - "classify_prompt"
-Cohesion: 0.08
-Nodes (34): classify_prompt(), _matches(), _normalize(), build_capability_report(), Any, Path, ContractSnapshot, ContractSnapshotError (+26 more)
+Cohesion: 0.52
+Nodes (5): _normalize(), science_context(), wants_science_evidence(), test_ordinary_bugfix_does_not_activate_science_route(), test_scientific_evidence_prompts_activate_the_read_only_mcp_route()
 
 ### Community 8 - "run_doctor"
 Cohesion: 0.06
@@ -177,7 +172,7 @@ Nodes (44): minLength, type, additionalProperties, additionalProperties, propert
 
 ### Community 11 - "inspect_command"
 Cohesion: 0.07
-Nodes (60): ArgumentParser, execution_is_enabled(), find_workflow(), load_workflow(), test_lite_execution_requires_explicit_enable_and_positive_budget(), test_find_workflow_walks_up_from_child_directory(), test_load_workflow_parses_frontmatter_defaults_and_body(), test_missing_workflow_returns_none() (+52 more)
+Nodes (64): ArgumentParser, git_base_revision(), _branch_keeper(), _build_parser(), _cmd_arsenal_check(), _cmd_arsenal_overlap(), _cmd_artifact_record(), _cmd_branch_approve() (+56 more)
 
 ### Community 12 - "14. Fase 9 — Orquestração real"
 Cohesion: 0.18
@@ -192,16 +187,16 @@ Cohesion: 0.25
 Nodes (8): ArsenalError, ArsenalRegistry, Any, Path, ValueError, Path, test_absorbed_capability_requires_existing_destination(), test_arsenal_validates_vocab_overlap_and_budget()
 
 ### Community 15 - "15. Fase 10 — Testes avançados"
-Cohesion: 0.23
-Nodes (10): Issue, OrchestrationPolicy, sanitize_workspace_key(), Workspace, WorkspaceManager, test_policy_allows_issue_when_blockers_terminal(), test_policy_blocks_issue_with_active_blocker(), test_retry_backoff_is_exponential_and_capped() (+2 more)
+Cohesion: 0.21
+Nodes (11): test_policy_allows_issue_when_blockers_terminal(), test_policy_blocks_issue_with_active_blocker(), test_retry_backoff_is_exponential_and_capped(), test_workspace_manager_creates_deterministic_issue_workspace(), test_workspace_manager_sanitizes_identifier(), Issue, OrchestrationPolicy, Path (+3 more)
 
 ### Community 16 - "18. Fase 13 — Canário e rollout"
 Cohesion: 0.32
 Nodes (8): NodeResult, Any, ValueError, WorkflowCensus, WorkflowContractError, test_census_requires_satisfied_dependencies_for_completion(), test_node_census_reconciles_only_complete_unique_results(), test_node_result_contract_rejects_unknown_duplicate_and_unsupported_status()
 
 ### Community 17 - "19. Protocolo de comparação com Harness4Claude"
-Cohesion: 0.22
-Nodes (7): _indent_of(), _parse_block(), _parse_limited_yaml(), _parse_scalar(), _split_frontmatter(), WorkflowConfigError, WorkflowDefinition
+Cohesion: 0.16
+Nodes (16): find_workflow(), _indent_of(), load_workflow(), _parse_block(), _parse_limited_yaml(), _parse_scalar(), Any, Path (+8 more)
 
 ### Community 18 - "Symphony Memory Workflow Implementation Plan"
 Cohesion: 0.14
@@ -216,8 +211,8 @@ Cohesion: 0.17
 Nodes (12): type, maximum, minimum, type, type, null, string, agreed (+4 more)
 
 ### Community 21 - "11. Fase 6 — Índice gráfico e recuperação"
-Cohesion: 0.33
-Nodes (11): collect_graph_context(), _git_head(), _graph_head(), _latest_source_mtime(), Any, Path, _sha256(), write_graph_context() (+3 more)
+Cohesion: 0.06
+Nodes (50): classify_prompt(), _matches(), _normalize(), build_capability_report(), Any, Path, ContractSnapshot, ContractSnapshotError (+42 more)
 
 ### Community 22 - "12. Fase 7 — Evidência forte e Stop gate"
 Cohesion: 0.18
@@ -375,29 +370,25 @@ Nodes (4): 2.1 Hard constraints, 2.2 Métricas otimizáveis, 2.3 Função, 2. Pr
 Cohesion: 0.50
 Nodes (4): 3.1 Preparação, 3.2 Proibições, 3.3 Stop conditions, 3. Regras de execução
 
-### Community 88 - "science_context"
-Cohesion: 0.52
-Nodes (5): _normalize(), science_context(), wants_science_evidence(), test_ordinary_bugfix_does_not_activate_science_route(), test_scientific_evidence_prompts_activate_the_read_only_mcp_route()
-
 ## Knowledge Gaps
 - **334 isolated node(s):** `$schema`, `$id`, `type`, `branch_id`, `parent_session_id` (+329 more)
   These have ≤1 connection - possible missing edges or undocumented components.
-- **24 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+- **20 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `HarnessStateStore` connect `HarnessStateStore` to `hook.py`, `inspect_command`, `load_workflow`, `classify_prompt`?**
-  _High betweenness centrality (0.068) - this node is a cross-community bridge._
+- **Why does `HarnessStateStore` connect `HarnessStateStore` to `hook.py`, `inspect_command`, `load_workflow`, `11. Fase 6 — Índice gráfico e recuperação`?**
+  _High betweenness centrality (0.061) - this node is a cross-community bridge._
 - **Why does `HarnessDatabase` connect `load_workflow` to `HarnessStateStore`, `inspect_command`?**
-  _High betweenness centrality (0.045) - this node is a cross-community bridge._
-- **Why does `ContractSnapshot` connect `classify_prompt` to `HarnessStateStore`, `inspect_command`, `load_workflow`?**
-  _High betweenness centrality (0.014) - this node is a cross-community bridge._
+  _High betweenness centrality (0.041) - this node is a cross-community bridge._
+- **Why does `plugin_fingerprint()` connect `11. Fase 6 — Índice gráfico e recuperação` to `install`?**
+  _High betweenness centrality (0.025) - this node is a cross-community bridge._
 - **Are the 4 inferred relationships involving `HarnessDatabase` (e.g. with `BranchKeeper` and `BranchPolicyError`) actually correct?**
   _`HarnessDatabase` has 4 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 4 inferred relationships involving `HarnessStateStore` (e.g. with `Classification` and `ContractSnapshot`) actually correct?**
-  _`HarnessStateStore` has 4 INFERRED edges - model-reasoned connections that need verification._
-- **Are the 11 inferred relationships involving `StateTransitionError` (e.g. with `BranchKeeper` and `.offer()`) actually correct?**
-  _`StateTransitionError` has 11 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 3 inferred relationships involving `HarnessStateStore` (e.g. with `Classification` and `ContractSnapshot`) actually correct?**
+  _`HarnessStateStore` has 3 INFERRED edges - model-reasoned connections that need verification._
+- **Are the 10 inferred relationships involving `StateTransitionError` (e.g. with `BranchKeeper` and `.offer()`) actually correct?**
+  _`StateTransitionError` has 10 INFERRED edges - model-reasoned connections that need verification._
 - **Are the 25 inferred relationships involving `_build_parser()` (e.g. with `_cmd_arsenal_check()` and `_cmd_arsenal_overlap()`) actually correct?**
   _`_build_parser()` has 25 INFERRED edges - model-reasoned connections that need verification._

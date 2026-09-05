@@ -1,6 +1,8 @@
 import json
 import sqlite3
 
+import pytest
+
 from harness4codex.hook import (
     _decode_payload,
     _extract_exit_code,
@@ -221,9 +223,7 @@ def test_post_tool_use_promotes_after_multiple_files(tmp_path):
         {
             "hook_event_name": "PostToolUse",
             "tool_name": "apply_patch",
-            "tool_input": {
-                "command": "*** Update File: a.py\n*** Add File: b.py\n*** Update File: c.py\n"
-            },
+            "tool_input": {"command": "*** Update File: a.py\n*** Add File: b.py\n*** Update File: c.py\n"},
         },
         harness_home=tmp_path,
     )
@@ -303,9 +303,7 @@ def test_successful_verification_is_recorded_from_nested_response(tmp_path):
             "hook_event_name": "PostToolUse",
             "tool_name": "Bash",
             "tool_input": {"cmd": "python -m pytest -q"},
-            "tool_response": {
-                "content": [{"type": "text", "text": "Process exited with code 0\n75 passed"}]
-            },
+            "tool_response": {"content": [{"type": "text", "text": "Process exited with code 0\n75 passed"}]},
         },
         harness_home=tmp_path,
     )
@@ -322,6 +320,39 @@ def test_verification_detection_requires_an_actual_test_runner_command():
     assert _is_shell_tool({"tool_name": "shell_command"}) is True
     assert _is_shell_tool({"tool_name": "exec_command"}) is True
     assert _is_shell_tool({"tool_name": "functions.exec"}) is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "python -m pytest --invalid-option; echo '1 passed'",
+        "python -m pytest --invalid-option && echo '1 passed'",
+        "python -m pytest --invalid-option || echo '1 passed'",
+        "python -m pytest --invalid-option | echo '1 passed'",
+        "python -m pytest --invalid-option\necho '1 passed'",
+    ],
+)
+def test_composed_shell_command_is_not_trusted_verification(command):
+    assert _looks_like_verification(command) is False
+
+
+def test_composed_command_cannot_create_automatic_test_evidence(tmp_path):
+    handle_payload(
+        {"hook_event_name": "UserPromptSubmit", "prompt": "Corrija o bug."},
+        harness_home=tmp_path,
+    )
+
+    handle_payload(
+        {
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_input": {"cmd": "python -m pytest --invalid-option; echo '1 passed'"},
+            "tool_response": {"content": [{"type": "text", "text": "Process exited with code 0\n1 passed"}]},
+        },
+        harness_home=tmp_path,
+    )
+
+    assert HarnessStateStore(tmp_path).load()["verified"] is False
 
 
 def test_shell_command_invalidates_prior_evidence_without_promoting_file_count(tmp_path):
@@ -410,9 +441,7 @@ def test_write_after_verification_invalidates_the_gate(tmp_path):
 
 
 def test_utf8_hook_input_is_decoded_independently_of_windows_stdio():
-    payload = _decode_payload(
-        '{"hook_event_name":"UserPromptSubmit","prompt":"correção e ciência"}'.encode()
-    )
+    payload = _decode_payload('{"hook_event_name":"UserPromptSubmit","prompt":"correção e ciência"}'.encode())
 
     assert payload["prompt"] == "correção e ciência"
 

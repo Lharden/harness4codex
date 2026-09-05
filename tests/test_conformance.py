@@ -3,7 +3,6 @@ from pathlib import Path
 from harness4codex.conformance import build_capability_report
 from harness4codex.contract import ContractSnapshot
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 

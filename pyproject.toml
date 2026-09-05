@@ -4,16 +4,28 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "harness4codex"
-version = "1.0.0"
+version = "1.1.0"
 description = "Codex-native workflow harness with hooks, state, skills, and guardrails."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [{ name = "Lharden" }]
+dependencies = ["tomli>=2; python_version < '3.11'"]
 
 [tool.setuptools.package-data]
 harness4codex = ["_contract/**/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q -p no:cacheprovider --basetemp .pytest_tmp_codex"
+addopts = "-q -p no:cacheprovider"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = [".pytest_tmp_*", "graphify-out"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "SIM", "ISC", "RUF"]
+
+[tool.ruff.lint.per-file-ignores]
+"hooks/*.py" = ["E402"]

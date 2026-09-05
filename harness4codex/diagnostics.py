@@ -1,16 +1,34 @@
 from __future__ import annotations
 
+import json
 import os
 import shutil
-import json
 import sqlite3
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 CI job
+    import tomli as tomllib
 
 from .contract import ContractSnapshot
+from .plugin_identity import plugin_fingerprint
+
+REQUIRED_HOOKS = {
+    "SessionStart",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PermissionRequest",
+    "PostToolUse",
+    "PreCompact",
+    "PostCompact",
+    "SubagentStart",
+    "SubagentStop",
+    "Stop",
+    "SessionEnd",
+}
 
 
 @dataclass(frozen=True)
@@ -61,16 +79,119 @@ def _load_config(path: Path) -> tuple[dict, DiagnosticCheck | None]:
         return {}, DiagnosticCheck("CONFIG_INVALID", "fail", f"Could not parse {path}: {exc}")
 
 
+def _read_plugin_manifest(plugin_root: Path) -> dict | None:
+    try:
+        payload = json.loads((plugin_root / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _marketplace_plugin(config: dict, selector: str) -> Path | None:
+    if "@" not in selector:
+        return None
+    marketplace_name = selector.split("@", 1)[1]
+    marketplaces = config.get("marketplaces") if isinstance(config.get("marketplaces"), dict) else {}
+    marketplace = marketplaces.get(marketplace_name)
+    if not isinstance(marketplace, dict) or marketplace.get("source_type") != "local":
+        return None
+    source = marketplace.get("source")
+    if not isinstance(source, str) or not source.strip():
+        return None
+    return Path(source) / "plugins" / "harness4codex"
+
+
+def _active_plugin(home: Path, selector: str, expected_version: str | None) -> Path | None:
+    marketplace_name = selector.split("@", 1)[1] if "@" in selector else ""
+    cache = home / "plugins" / "cache" / marketplace_name / "harness4codex"
+    if expected_version and (cache / expected_version).is_dir():
+        return cache / expected_version
+    candidates = [path for path in cache.iterdir() if path.is_dir()] if cache.is_dir() else []
+    return max(candidates, key=lambda path: path.stat().st_mtime_ns) if candidates else None
+
+
+def _registered_hooks(plugin_root: Path) -> set[str]:
+    try:
+        payload = json.loads((plugin_root / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    hooks = payload.get("hooks") if isinstance(payload, dict) else None
+    return set(hooks) if isinstance(hooks, dict) else set()
+
+
+def _hooks_without_commands(plugin_root: Path) -> set[str]:
+    try:
+        payload = json.loads((plugin_root / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set(REQUIRED_HOOKS)
+    hooks = payload.get("hooks") if isinstance(payload, dict) else None
+    if not isinstance(hooks, dict):
+        return set(REQUIRED_HOOKS)
+    invalid: set[str] = set()
+    for event in REQUIRED_HOOKS & set(hooks):
+        groups = hooks.get(event)
+        commands = []
+        if isinstance(groups, list):
+            for group in groups:
+                handlers = group.get("hooks") if isinstance(group, dict) else None
+                if isinstance(handlers, list):
+                    commands.extend(
+                        handler.get("command")
+                        for handler in handlers
+                        if isinstance(handler, dict) and isinstance(handler.get("command"), str)
+                    )
+        if not any(command.strip() for command in commands):
+            invalid.add(event)
+    return invalid
+
+
+def _state_database_checks(home: Path) -> list[DiagnosticCheck]:
+    databases = set((home / "harness").rglob("harness.db")) if (home / "harness").is_dir() else set()
+    if (home / "harness.db").is_file():
+        databases.add(home / "harness.db")
+    failures: list[str] = []
+    for database in sorted(databases):
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(database)
+            integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
+            if integrity != "ok":
+                failures.append(f"{database}: {integrity}")
+        except sqlite3.Error as exc:
+            failures.append(f"{database}: {exc}")
+        finally:
+            if connection is not None:
+                connection.close()
+    if failures:
+        return [
+            DiagnosticCheck(
+                "SCOPED_STATE_DATABASES",
+                "fail",
+                f"Checked {len(databases)} scoped state database(s); failures: " + "; ".join(failures),
+            )
+        ]
+    return [
+        DiagnosticCheck(
+            "SCOPED_STATE_DATABASES",
+            "pass" if databases else "warn",
+            f"Checked {len(databases)} scoped state database(s); all are healthy.",
+        )
+    ]
+
+
 def run_doctor(
     codex_home: str | Path,
     *,
     env: Mapping[str, str] | None = None,
     which: Callable[[str], str | None] = shutil.which,
     user_env: Mapping[str, str] | None = None,
+    source_root: str | Path | None = None,
 ) -> DoctorReport:
     home = Path(codex_home).expanduser().resolve()
     process_env = os.environ if env is None else env
     inherited_user_env = _windows_user_environment() if user_env is None else user_env
+    runtime_source = Path(source_root or Path(__file__).resolve().parents[1]).resolve()
+    runtime_manifest = _read_plugin_manifest(runtime_source)
     config, config_error = _load_config(home / "config.toml")
     checks: list[DiagnosticCheck] = []
     if config_error is not None:
@@ -83,10 +204,12 @@ def run_doctor(
         checks.append(DiagnosticCheck("HOOKS_DISABLED", "fail", "Set features.hooks = true."))
 
     plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
-    harness4codex_enabled = any(
-        name.split("@", 1)[0] == "harness4codex" and isinstance(value, dict) and value.get("enabled") is True
+    harness_selectors = [
+        name
         for name, value in plugins.items()
-    )
+        if name.split("@", 1)[0] == "harness4codex" and isinstance(value, dict) and value.get("enabled") is True
+    ]
+    harness4codex_enabled = bool(harness_selectors)
     competing = [
         name
         for name, value in plugins.items()
@@ -106,6 +229,70 @@ def run_doctor(
         )
     else:
         checks.append(DiagnosticCheck("SINGLE_SUPERVISOR", "pass", "Harness4Codex is the Codex workflow supervisor."))
+
+    active_plugin: Path | None = None
+    expected_plugin: Path | None = None
+    if harness_selectors:
+        selector = harness_selectors[0]
+        expected_plugin = _marketplace_plugin(config, selector)
+        expected_manifest = _read_plugin_manifest(expected_plugin) if expected_plugin else None
+        expected_version = str(expected_manifest.get("version")) if expected_manifest else None
+        active_plugin = _active_plugin(home, selector, expected_version)
+        active_manifest = _read_plugin_manifest(active_plugin) if active_plugin else None
+        if expected_plugin is None or expected_manifest is None:
+            checks.append(
+                DiagnosticCheck(
+                    "MARKETPLACE_SOURCE_INVALID",
+                    "fail",
+                    f"Could not resolve a valid local marketplace source for {selector}.",
+                )
+            )
+        elif runtime_manifest and runtime_manifest.get("version") != expected_version:
+            checks.append(
+                DiagnosticCheck(
+                    "MARKETPLACE_SOURCE_STALE",
+                    "fail",
+                    f"Configured marketplace has Harness4Codex {expected_version}; "
+                    f"the inspected source is {runtime_manifest.get('version')}.",
+                )
+            )
+        elif active_plugin is None or active_manifest is None:
+            checks.append(
+                DiagnosticCheck("ACTIVE_PLUGIN_MISSING", "fail", f"No active cache entry exists for {selector}.")
+            )
+        elif active_manifest.get("version") != expected_version:
+            checks.append(
+                DiagnosticCheck(
+                    "ACTIVE_PLUGIN_STALE",
+                    "fail",
+                    f"Active Harness4Codex is {active_manifest.get('version')}; "
+                    f"marketplace source is {expected_version}.",
+                )
+            )
+        elif plugin_fingerprint(active_plugin) != plugin_fingerprint(expected_plugin):
+            checks.append(
+                DiagnosticCheck(
+                    "ACTIVE_PLUGIN_CONTENT_MISMATCH",
+                    "fail",
+                    "Active Harness4Codex content fingerprint differs from the configured marketplace source.",
+                )
+            )
+        elif source_root is not None and plugin_fingerprint(runtime_source) != plugin_fingerprint(expected_plugin):
+            checks.append(
+                DiagnosticCheck(
+                    "MARKETPLACE_SOURCE_CONTENT_STALE",
+                    "fail",
+                    "Configured marketplace content differs from the explicitly inspected source.",
+                )
+            )
+        else:
+            checks.append(
+                DiagnosticCheck(
+                    "ACTIVE_PLUGIN_CURRENT",
+                    "pass",
+                    f"Active Harness4Codex {expected_version} matches {expected_plugin}.",
+                )
+            )
 
     if features.get("enable_mcp_apps") is True:
         checks.append(DiagnosticCheck("CODEX_APPS_ENABLED", "pass", "Codex Apps startup is required."))
@@ -146,17 +333,25 @@ def run_doctor(
     science = servers.get("science_harness") if isinstance(servers.get("science_harness"), dict) else None
     if science is None:
         checks.append(
-            DiagnosticCheck("SCIENCE_MCP_MISSING", "fail", "Register the science_harness MCP server with `shs claims-mcp`.")
+            DiagnosticCheck(
+                "SCIENCE_MCP_MISSING", "fail", "Register the science_harness MCP server with `shs claims-mcp`."
+            )
         )
     else:
         command = str(science.get("command") or "")
         args = science.get("args") if isinstance(science.get("args"), list) else []
-        executable = str(Path(command).resolve()) if command and Path(command).is_absolute() and Path(command).exists() else which(command)
+        executable = (
+            str(Path(command).resolve())
+            if command and Path(command).is_absolute() and Path(command).exists()
+            else which(command)
+        )
         if executable and "claims-mcp" in args:
             checks.append(DiagnosticCheck("SCIENCE_MCP_READY", "pass", "Science Harness MCP is registered read-only."))
         else:
             checks.append(
-                DiagnosticCheck("SCIENCE_MCP_INVALID", "fail", "science_harness must run an available `shs claims-mcp` command.")
+                DiagnosticCheck(
+                    "SCIENCE_MCP_INVALID", "fail", "science_harness must run an available `shs claims-mcp` command."
+                )
             )
 
     if process_env.get("HARNESS_CONTROL_TOKEN"):
@@ -205,36 +400,51 @@ def run_doctor(
 
     snapshot = ContractSnapshot.load()
     if snapshot.verify_lock():
-        checks.append(DiagnosticCheck("CONTRACT_LOCK_VALID", "pass", f"Harness4Contract {snapshot.version} lock is valid."))
+        checks.append(
+            DiagnosticCheck("CONTRACT_LOCK_VALID", "pass", f"Harness4Contract {snapshot.version} lock is valid.")
+        )
     else:
-        checks.append(DiagnosticCheck("CONTRACT_LOCK_INVALID", "fail", "Vendored Harness4Contract snapshot does not match its lock."))
+        checks.append(
+            DiagnosticCheck(
+                "CONTRACT_LOCK_INVALID", "fail", "Vendored Harness4Contract snapshot does not match its lock."
+            )
+        )
 
-    hook_path = Path(__file__).resolve().parents[1] / "hooks" / "hooks.json"
-    required_hooks = {
-        "SessionStart", "UserPromptSubmit", "PreToolUse", "PermissionRequest", "PostToolUse",
-        "PreCompact", "PostCompact", "SubagentStart", "SubagentStop", "Stop", "SessionEnd",
-    }
-    try:
-        hook_payload = json.loads(hook_path.read_text(encoding="utf-8"))
-        registered = set(hook_payload.get("hooks") or {})
-    except (OSError, json.JSONDecodeError):
-        registered = set()
-    missing_hooks = sorted(required_hooks - registered)
+    inspected_plugin = active_plugin or expected_plugin or Path(__file__).resolve().parents[1]
+    registered = _registered_hooks(inspected_plugin)
+    missing_hooks = sorted(REQUIRED_HOOKS - registered)
+    empty_hooks = sorted(_hooks_without_commands(inspected_plugin))
+    runtime_wrapper_missing = not (
+        inspected_plugin / "hooks" / "codex_harness_hook.py"
+    ).is_file()
     if missing_hooks:
-        checks.append(DiagnosticCheck("LIFECYCLE_HOOKS_INCOMPLETE", "fail", f"Missing lifecycle hooks: {missing_hooks}"))
+        checks.append(
+            DiagnosticCheck(
+                "LIFECYCLE_HOOKS_INCOMPLETE",
+                "fail",
+                f"Active plugin is missing lifecycle hooks: {missing_hooks}",
+            )
+        )
+    elif runtime_wrapper_missing:
+        checks.append(
+            DiagnosticCheck(
+                "FULL_LIFECYCLE_HOOKS",
+                "fail",
+                "Lifecycle handlers are registered but their runtime wrapper is missing.",
+            )
+        )
+    elif empty_hooks:
+        checks.append(
+            DiagnosticCheck(
+                "FULL_LIFECYCLE_HOOKS",
+                "fail",
+                f"Active plugin has lifecycle events without command handlers: {empty_hooks}",
+            )
+        )
     else:
         checks.append(DiagnosticCheck("FULL_LIFECYCLE_HOOKS", "pass", "All Codex lifecycle hooks are registered."))
 
-    state_db = home / "harness.db"
-    if state_db.exists():
-        try:
-            with sqlite3.connect(state_db) as connection:
-                integrity = connection.execute("PRAGMA integrity_check").fetchone()[0]
-        except sqlite3.Error as exc:
-            checks.append(DiagnosticCheck("STATE_DB_ERROR", "fail", f"State database could not be checked: {exc}"))
-        else:
-            status = "pass" if integrity == "ok" else "fail"
-            checks.append(DiagnosticCheck("STATE_DB_INTEGRITY", status, f"SQLite integrity_check: {integrity}."))
+    checks.extend(_state_database_checks(home))
 
     return DoctorReport(
         ok=not any(check.status == "fail" for check in checks),

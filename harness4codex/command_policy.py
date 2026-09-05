@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import shlex
 from dataclasses import dataclass
 from pathlib import PurePath
-import shlex
 
 
 @dataclass(frozen=True)
@@ -29,9 +29,9 @@ def evaluate_command(command: str) -> PolicyDecision:
         current = _evaluate_invocation(invocation)
         if current.action == "deny":
             return current
-        if current.action == "require_approval" and decision.action not in {"deny"}:
-            decision = current
-        elif current.action == "warn" and decision.action == "allow":
+        if (current.action == "require_approval" and decision.action not in {"deny"}) or (
+            current.action == "warn" and decision.action == "allow"
+        ):
             decision = current
     return decision
 
@@ -46,8 +46,7 @@ def parse_invocations(command: str) -> list[CommandInvocation]:
         if not tokens:
             continue
         program = PurePath(tokens[0].replace("\\", "/")).name.lower()
-        if program.endswith(".exe"):
-            program = program[:-4]
+        program = program.removesuffix(".exe")
         invocation = CommandInvocation(program, tuple(tokens[1:]), segment.strip())
         invocations.append(invocation)
         nested = _nested_command(invocation)
@@ -111,9 +110,8 @@ def _nested_command(invocation: CommandInvocation) -> str | None:
         for marker in ("-command", "-c"):
             if marker in [arg.lower() for arg in args]:
                 return args[[arg.lower() for arg in args].index(marker) + 1]
-    if invocation.program in {"bash", "sh", "cmd"} and args:
-        if args[0].lower() in {"-c", "/c"} and len(args) > 1:
-            return args[1]
+    if invocation.program in {"bash", "sh", "cmd"} and len(args) > 1 and args[0].lower() in {"-c", "/c"}:
+        return args[1]
     return None
 
 
@@ -134,7 +132,11 @@ def _evaluate_invocation(invocation: CommandInvocation) -> PolicyDecision:
             if any(flag in {"--force", "-f", "--force-with-lease"} for flag in flags):
                 return PolicyDecision("deny", "force push", invocation)
             return PolicyDecision("warn", "confirm the reviewed git push target and diff", invocation)
-    if invocation.program == "codex" and len(args) >= 2:
-        if args[0] in {"plugin", "plugins"} and args[1] in {"add", "install", "remove", "uninstall"}:
-            return PolicyDecision("require_approval", "Codex plugin registry mutation", invocation)
+    if (
+        invocation.program == "codex"
+        and len(args) >= 2
+        and args[0] in {"plugin", "plugins"}
+        and args[1] in {"add", "install", "remove", "uninstall"}
+    ):
+        return PolicyDecision("require_approval", "Codex plugin registry mutation", invocation)
     return PolicyDecision("allow", invocation=invocation)

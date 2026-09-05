@@ -1,6 +1,10 @@
 import json
 from pathlib import Path
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # pragma: no cover - exercised by the Python 3.10 CI job
+    import tomli as tomllib
 
 from harness4codex import __version__
 
@@ -136,4 +140,4 @@ def test_release_version_is_synchronized():
     with (ROOT / "pyproject.toml").open("rb") as handle:
         project = tomllib.load(handle)
 
-    assert manifest["version"] == project["project"]["version"] == __version__ == "1.0.0"
+    assert manifest["version"] == project["project"]["version"] == __version__ == "1.1.0"

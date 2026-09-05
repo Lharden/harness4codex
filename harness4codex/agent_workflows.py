@@ -61,9 +61,7 @@ class WorkflowCensus:
 
     def reconcile(self) -> dict[str, Any]:
         missing = sorted(set(self.nodes) - set(self.results))
-        failed = sorted(
-            node_id for node_id, result in self.results.items() if result.status != "complete"
-        )
+        failed = sorted(node_id for node_id, result in self.results.items() if result.status != "complete")
         return {
             "workflow_id": self.workflow_id,
             "expected": sorted(self.nodes),

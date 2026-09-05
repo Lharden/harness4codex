@@ -18,5 +18,4 @@ def test_vendored_contract_hash_matches_lock():
     contract = ContractSnapshot.load()
 
     assert contract.verify_lock() is True
-    assert contract.version == "1.0.0"
-
+    assert contract.version == "1.1.0"

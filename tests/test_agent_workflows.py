@@ -1,6 +1,10 @@
 import pytest
 
-from harness4codex.agent_workflows import NodeResult, WorkflowCensus, WorkflowContractError
+from harness4codex.agent_workflows import (
+    NodeResult,
+    WorkflowCensus,
+    WorkflowContractError,
+)
 
 
 def test_node_census_reconciles_only_complete_unique_results():

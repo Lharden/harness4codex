@@ -5,30 +5,45 @@ from typing import Any
 
 from .contract import ContractSnapshot
 
-
 CAPABILITY_EVIDENCE: dict[str, list[str]] = {
-    "classification.deterministic-suggestion": ["harness4codex/classifier.py#classify_prompt", "tests/test_classifier.py"],
-    "classification.semantic-confirmation": ["harness4codex/state_db.py#confirm_classification", "tests/test_transactional_state.py"],
-    "classification.human-override": ["harness4codex/cli.py#_cmd_classification_confirm", "tests/test_cli.py"],
-    "state.session-worktree-isolation": ["harness4codex/state.py#store_for_payload", "tests/test_state.py"],
-    "state.transactional-fsm": ["harness4codex/state_db.py#HarnessDatabase", "tests/test_transactional_state.py"],
-    "state.ttl-signals": ["harness4codex/state_db.py#expire_stale_task", "tests/test_transactional_state.py"],
-    "workflow.sdd-v3": ["skills/codex-harness-workflow/SKILL.md", "tests/test_packaging.py"],
-    "workflow.human-gates": ["harness4codex/state_db.py#open_gate", "tests/test_transactional_state.py"],
-    "workflow.adversarial-agents": ["harness4codex/agent_workflows.py#WorkflowCensus", "skills/grill-me/SKILL.md"],
-    "workflow.spec-verification": ["skills/verify-against-spec/SKILL.md", "skills/verify-against-spec/templates/verification-template.md"],
-    "context.graphify": ["harness4codex/graph_context.py#collect_graph_context", "tests/test_graph_context.py"],
-    "context.skill-router": ["harness4codex/classifier.py", "skills/codex-harness-workflow/SKILL.md"],
-    "capability.arsenal": ["harness4codex/arsenal.py#ArsenalRegistry", "tests/test_arsenal.py"],
-    "memory.wiki-vault": ["harness4codex/wiki.py#WikiIndex", "skills/wiki-query/SKILL.md"],
-    "memory.operational-search": ["harness4codex/memory.py#HarnessMemoryStore", "tests/test_memory.py"],
-    "conversation.branch-keeper": ["harness4codex/branches.py#BranchKeeper", "tests/test_branches.py"],
-    "safety.command-policy": ["harness4codex/command_policy.py#evaluate_command", "tests/test_command_policy.py"],
-    "integration.harness-lite": ["harness4codex/harness_lite_adapter.py", "tests/test_harness_lite_adapter.py"],
-    "integration.science-harness": ["harness4codex/science_adapter.py", "tests/test_science_adapter.py"],
-    "lifecycle.full-hooks": ["hooks/hooks.json", "tests/test_packaging.py"],
-    "observability.health-telemetry": ["harness4codex/diagnostics.py#run_doctor", "tests/test_diagnostics.py"],
-    "editorial.drop-constrain-retain": ["skills/codex-harness-workflow/SKILL.md", "tests/test_packaging.py"],
+    "classification.deterministic-suggestion": ["tests/test_classifier.py#test_bug_promotes_debugging_and_tdd"],
+    "classification.semantic-confirmation": [
+        "tests/test_transactional_state.py#test_semantic_confirmation_records_provenance_and_replaces_pipeline"
+    ],
+    "classification.human-override": ["tests/test_cli.py#test_classification_confirm_updates_transactional_task"],
+    "state.session-worktree-isolation": ["tests/test_state.py#test_store_for_payload_scopes_by_session_and_cwd"],
+    "state.transactional-fsm": [
+        "tests/test_transactional_state.py#test_fresh_test_evidence_allows_completion_and_file_change_invalidates_it"
+    ],
+    "state.ttl-signals": ["tests/test_transactional_state.py#test_stale_task_ttl_abandons_pipeline_and_releases_scope"],
+    "workflow.sdd-v3": ["tests/test_packaging.py#test_codex_native_sdd_skill_surface_is_packaged"],
+    "workflow.human-gates": [
+        "tests/test_transactional_state.py#test_human_gate_sets_awaiting_gate_and_resolution_advances"
+    ],
+    "workflow.adversarial-agents": [
+        "tests/test_agent_workflows.py#test_node_census_reconciles_only_complete_unique_results"
+    ],
+    "workflow.spec-verification": ["tests/test_packaging.py#test_sdd_templates_are_packaged"],
+    "context.graphify": ["tests/test_graph_context.py#test_graph_context_records_hash_head_query_and_freshness"],
+    "context.skill-router": ["tests/test_classifier.py#test_openai_docs_prompt_uses_the_installed_openai_docs_skill"],
+    "capability.arsenal": ["tests/test_arsenal.py#test_arsenal_validates_vocab_overlap_and_budget"],
+    "memory.wiki-vault": ["tests/test_wiki.py#test_wiki_index_returns_cited_sections_and_confidence"],
+    "memory.operational-search": ["tests/test_memory.py#test_memory_records_and_searches_history"],
+    "conversation.branch-keeper": ["tests/test_branches.py#test_each_branch_approval_resolves_only_its_own_gate"],
+    "safety.command-policy": ["tests/test_command_policy.py#test_destructive_command_in_chain_is_denied"],
+    "integration.harness-lite": [
+        "tests/test_harness_lite_adapter.py#test_preview_envelope_matches_harness_lite_task_envelope_v1"
+    ],
+    "integration.science-harness": [
+        "tests/test_science_adapter.py#test_scientific_evidence_prompts_activate_the_read_only_mcp_route"
+    ],
+    "lifecycle.full-hooks": ["tests/test_packaging.py#test_plugin_registers_full_codex_lifecycle"],
+    "observability.health-telemetry": [
+        "tests/test_diagnostics.py#test_doctor_fails_when_active_plugin_is_older_than_marketplace_source"
+    ],
+    "editorial.drop-constrain-retain": [
+        "tests/test_packaging.py#test_workflow_skill_drives_the_transactional_contract"
+    ],
 }
 
 

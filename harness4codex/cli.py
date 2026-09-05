@@ -22,8 +22,8 @@ from .memory import HarnessMemoryStore, MemoryConsolidator
 from .memory_compression import CompressionError, compress_memory_file
 from .state import HarnessStateStore, list_session_states
 from .state_db import HarnessDatabase, StateTransitionError
-from .workflow import load_workflow
 from .wiki import WikiIndex
+from .workflow import load_workflow
 
 
 def run(argv: Sequence[str] | None = None) -> int:
@@ -401,9 +401,7 @@ def _cmd_classification_confirm(args: argparse.Namespace) -> int:
 
 def _cmd_artifact_record(args: argparse.Namespace) -> int:
     try:
-        task = HarnessDatabase(args.home).record_artifact(
-            args.task, args.type, args.path, args.content_hash
-        )
+        task = HarnessDatabase(args.home).record_artifact(args.task, args.type, args.path, args.content_hash)
     except StateTransitionError as exc:
         print(f"artifact record failed: {exc}")
         return 2
@@ -414,9 +412,7 @@ def _cmd_artifact_record(args: argparse.Namespace) -> int:
 
 def _cmd_task_transition(args: argparse.Namespace) -> int:
     try:
-        task = HarnessDatabase(args.home).transition(
-            args.task, args.to, expected_revision=args.expect_revision
-        )
+        task = HarnessDatabase(args.home).transition(args.task, args.to, expected_revision=args.expect_revision)
     except StateTransitionError as exc:
         print(f"task transition failed: {exc}")
         return 2

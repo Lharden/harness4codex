@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import re
 import sqlite3
 import sys
@@ -18,12 +18,12 @@ from .state import HarnessStateStore, store_for_payload
 from .workflow import load_workflow
 
 VERIFICATION_PATTERNS = [
-    r"(?:^|&&|\|\||;)\s*(?:py|python(?:\.exe)?)\s+-m\s+(?:pytest|unittest)\b",
-    r"(?:^|&&|\|\||;)\s*pytest(?:\.exe)?\b",
-    r"(?:^|&&|\|\||;)\s*(?:npm|pnpm)\s+(?:run\s+)?test\b",
-    r"(?:^|&&|\|\||;)\s*yarn\s+test\b",
-    r"(?:^|&&|\|\||;)\s*cargo\s+test\b",
-    r"(?:^|&&|\|\||;)\s*go\s+test\b",
+    r"^\s*(?:py|python(?:\.exe)?)\s+-m\s+(?:pytest|unittest)\b",
+    r"^\s*pytest(?:\.exe)?\b",
+    r"^\s*(?:npm|pnpm)\s+(?:run\s+)?test\b",
+    r"^\s*yarn\s+test\b",
+    r"^\s*cargo\s+test\b",
+    r"^\s*go\s+test\b",
 ]
 
 PATCH_FILE_PATTERN = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
@@ -121,7 +121,32 @@ def _extract_files(payload: dict[str, Any]) -> list[str]:
     return list(dict.fromkeys(files))
 
 
+def _has_unquoted_shell_composition(command: str) -> bool:
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(command):
+        if escaped:
+            escaped = False
+            continue
+        if quote:
+            if character == "\\" and quote == '"':
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if character in {"'", '"'}:
+            quote = character
+            continue
+        if character in {";", "|", "&", "\r", "\n", "`"}:
+            return True
+        if character == "$" and index + 1 < len(command) and command[index + 1] == "(":
+            return True
+    return quote is not None
+
+
 def _looks_like_verification(command: str) -> bool:
+    if not command or _has_unquoted_shell_composition(command):
+        return False
     return any(re.search(pattern, command, re.IGNORECASE) for pattern in VERIFICATION_PATTERNS)
 
 
@@ -384,12 +409,15 @@ def _handle_post_tool(event: str, payload: dict[str, Any], store: HarnessStateSt
     if promoted:
         return _context_output(
             event,
-            "HARNESS4CODEX promoted this task from C0 to C1 because edits touched three or more files. Use codex-harness-workflow and run verification-before-completion.",
+            "HARNESS4CODEX promoted this task from C0 to C1 because edits touched "
+            "three or more files. Use codex-harness-workflow and run "
+            "verification-before-completion.",
         )
     if verification_seen and exit_code is None:
         return _context_output(
             event,
-            "HARNESS4CODEX saw a verification command, but the hook could not confirm exit code 0. Read the tool output before marking the task verified.",
+            "HARNESS4CODEX saw a verification command, but the hook could not confirm "
+            "exit code 0. Read the tool output before marking the task verified.",
         )
     if verification_seen and exit_code == 0 and tests_collected == 0:
         return _context_output(
@@ -491,7 +519,7 @@ def _emit(output: str) -> None:
 def _log_boundary_error() -> None:
     try:
         HarnessStateStore().log_error(traceback.format_exc())
-    except Exception:  # noqa: BLE001 - the hook boundary must remain fail-open
+    except Exception:
         return
 
 
@@ -505,7 +533,7 @@ def main() -> int:
         if output:
             _emit(output)
         return 0
-    except Exception as exc:  # noqa: BLE001  # pragma: no cover - defensive hook boundary
+    except Exception as exc:  # pragma: no cover - defensive hook boundary
         _log_boundary_error()
         _emit(_error_output(str(exc)))
         return 0

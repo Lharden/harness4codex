@@ -5,10 +5,12 @@ import json
 import sqlite3
 import time
 import uuid
+from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
+
 
 class StateTransitionError(RuntimeError):
     pass
@@ -172,9 +174,7 @@ class HarnessDatabase:
                 );
                 """
             )
-            gate_columns = {
-                str(row[1]) for row in connection.execute("PRAGMA table_info(gates)").fetchall()
-            }
+            gate_columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(gates)").fetchall()}
             if "subject_id" not in gate_columns:
                 connection.execute("ALTER TABLE gates ADD COLUMN subject_id TEXT")
             connection.execute(
@@ -428,9 +428,7 @@ class HarnessDatabase:
                     (expires_at, current_time, scope_id),
                 )
             elif float(current["expires_at"]) > current_time:
-                raise StateTransitionError(
-                    f"scope {scope_id} has an active lease owned by another writer"
-                )
+                raise StateTransitionError(f"scope {scope_id} has an active lease owned by another writer")
             else:
                 epoch = int(current["owner_epoch"]) + 1
                 connection.execute(
@@ -677,9 +675,7 @@ class HarnessDatabase:
             row = self._locked_task(connection, task_id)
             self._expect_revision(row, expected_revision)
             if owner_epoch is not None and int(row["owner_epoch"]) != owner_epoch:
-                raise StateTransitionError(
-                    f"owner epoch mismatch: expected {owner_epoch}, actual {row['owner_epoch']}"
-                )
+                raise StateTransitionError(f"owner epoch mismatch: expected {owner_epoch}, actual {row['owner_epoch']}")
             pipeline = json.loads(row["pipeline_json"])
             current_index = int(row["phase_index"])
             next_index = current_index + 1
@@ -721,7 +717,8 @@ class HarnessDatabase:
             row = self._locked_task(connection, task_id)
             self._expect_revision(row, expected_revision)
             pending = connection.execute(
-                "SELECT id FROM gates WHERE task_id = ? AND gate_type = ? AND status = 'pending' ORDER BY id DESC LIMIT 1",
+                "SELECT id FROM gates WHERE task_id = ? AND gate_type = ? "
+                "AND status = 'pending' ORDER BY id DESC LIMIT 1",
                 (task_id, gate_type),
             ).fetchone()
             if pending is None:
@@ -757,7 +754,8 @@ class HarnessDatabase:
             )
             connection.execute(
                 "UPDATE tasks SET code_revision = ?, revision = revision + 1, verified = 0, "
-                "status = CASE WHEN status = 'verified' THEN 'active' ELSE status END, updated_at = ? WHERE task_id = ?",
+                "status = CASE WHEN status = 'verified' THEN 'active' ELSE status END, "
+                "updated_at = ? WHERE task_id = ?",
                 (next_code_revision, utc_now(), task_id),
             )
         return self.task(task_id)
@@ -802,9 +800,19 @@ class HarnessDatabase:
                 ),
             )
             connection.execute(
-                "UPDATE tasks SET verified = ?, status = CASE WHEN ? THEN 'verified' ELSE status END, "
-                "revision = revision + 1, updated_at = ? WHERE task_id = ?",
-                (1 if valid_test else int(row["verified"]), 1 if valid_test else 0, utc_now(), task_id),
+                "UPDATE tasks SET verified = ?, status = ?, revision = revision + 1, updated_at = ? WHERE task_id = ?",
+                (
+                    1 if valid_test else 0 if evidence_type == "test" else int(row["verified"]),
+                    (
+                        "verified"
+                        if valid_test
+                        else "active"
+                        if evidence_type == "test" and row["status"] == "verified"
+                        else row["status"]
+                    ),
+                    utc_now(),
+                    task_id,
+                ),
             )
         return self.task(task_id)
 
@@ -853,22 +861,32 @@ class HarnessDatabase:
 
     @staticmethod
     def _has_artifact(connection: sqlite3.Connection, task_id: str, artifact_type: str) -> bool:
-        return connection.execute(
-            "SELECT 1 FROM artifacts WHERE task_id = ? AND artifact_type = ? LIMIT 1",
-            (task_id, artifact_type),
-        ).fetchone() is not None
+        return (
+            connection.execute(
+                "SELECT 1 FROM artifacts WHERE task_id = ? AND artifact_type = ? LIMIT 1",
+                (task_id, artifact_type),
+            ).fetchone()
+            is not None
+        )
 
     @staticmethod
     def _has_fresh_test_evidence(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
-        return connection.execute(
-            """
+        return (
+            connection.execute(
+                """
             SELECT 1 FROM evidence
             WHERE task_id = ? AND code_revision = ? AND evidence_type = 'test'
               AND exit_code = 0 AND tests_collected > 0 AND tests_passed = tests_collected
+              AND id = (
+                  SELECT MAX(id) FROM evidence
+                  WHERE task_id = ? AND code_revision = ? AND evidence_type = 'test'
+              )
             LIMIT 1
             """,
-            (row["task_id"], row["code_revision"]),
-        ).fetchone() is not None
+                (row["task_id"], row["code_revision"], row["task_id"], row["code_revision"]),
+            ).fetchone()
+            is not None
+        )
 
     @staticmethod
     def _bump(connection: sqlite3.Connection, task_id: str) -> None:
