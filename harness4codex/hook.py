@@ -13,6 +13,7 @@ from .classifier import classify_prompt
 from .git_guard import inspect_command
 from .harness_lite_adapter import preview_for_prompt
 from .memory import HarnessMemoryStore
+from . import spool_mirror
 from .science_adapter import science_context
 from .state import HarnessStateStore, store_for_payload
 from .workflow import load_workflow
@@ -350,6 +351,22 @@ def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessState
         context = _append_workflow_context(_task_context(current, heading), payload)
         return _context_output(event, _append_science_context(context, prompt))
     state = store.start_task(classification, prompt)
+    # Espelho de coordenacao (master-harness, degrau `store_mode: dual_write`).
+    # Uma linha anexada, best-effort, sem leitura e sem bloqueio: e o que permite
+    # a sessao do Claude no mesmo repositorio ver que ha trabalho aqui. Silencioso
+    # quando a escada nao autorizou ou quando o master-harness nao esta instalado.
+    spool_mirror.espelhar(
+        cwd=str(_cwd_from_payload(payload)),
+        session_id=str(payload.get("session_id") or payload.get("sessionId") or ""),
+        tipo="task.start",
+        dados={
+            "task_id": state.get("task_id"),
+            "level": state.get("level"),
+            "kind": state.get("kind"),
+            "pipeline": state.get("pipeline") or [],
+        },
+        epoch=int(state.get("owner_epoch") or 1),
+    )
     store.log_event(event, {"classification": state.get("classification"), "prompt": prompt})
     _record_memory(store, event, prompt, {"classification": state.get("classification")})
     context = _append_workflow_context(_classification_context(state), payload)
