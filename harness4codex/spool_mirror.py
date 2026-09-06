@@ -124,6 +124,35 @@ def _dono_do_worktree(dir_com_git: str) -> str | None:
     return repo if os.path.isdir(repo) else None
 
 
+def _canonico(caminho: str) -> str:
+    """Resolve junction e symlink, para que dois caminhos nao virem dois escopos.
+
+    Sem isto, o MESMO repositorio alcancado por uma junction produz dois escopos
+    — reproduzido nesta maquina:
+
+        real: repo:real-49a2172a
+        link: repo:link-43b54d04
+
+    Duas sessoes "no mesmo projeto" nao se veriam, e o estado fragmentaria. E a
+    classe do incidente de 2026-07-28, chegando por outra porta.
+
+    **Custa 94,5 us contra 0,5 do `abspath`** — 190x mais, medido. Entra assim
+    mesmo porque e UMA chamada por resolucao (na raiz achada, e nao a cada passo
+    da subida), o que da 0,2% do corpo python do hook.
+
+    E foi medido que nao renomeia nada: em 22 diretorios reais desta maquina,
+    ZERO slugs mudariam. Se algum mudasse, aplicar isto fragmentaria os baldes
+    existentes — que e exatamente o defeito que ele conserta.
+
+    Degrada para o proprio caminho em qualquer erro: identidade pior e melhor
+    que hook morto.
+    """
+    try:
+        return os.path.realpath(caminho)
+    except (OSError, ValueError):
+        return caminho
+
+
 def escopo_de(cwd: str | None) -> str:
     """`repo:<slug>` ou `dir:<slug>`. A especie fica no proprio valor.
 
@@ -141,13 +170,13 @@ def escopo_de(cwd: str | None) -> str:
     atual = p
     while True:
         if os.path.exists(os.path.join(atual, ".git")):
-            raiz, especie = _dono_do_worktree(atual) or atual, "repo"
+            raiz, especie = _canonico(_dono_do_worktree(atual) or atual), "repo"
             break
         pai = os.path.dirname(atual)
         if pai == atual:
             break
         atual = pai
-    alvo = raiz or p
+    alvo = raiz or _canonico(p)
     base = os.path.basename(alvo.rstrip("/\\")) or "root"
     base = re.sub(r"[^A-Za-z0-9._-]+", "-", base).strip("-") or "root"
     digest = hashlib.sha256(os.path.normcase(alvo).encode("utf-8")).hexdigest()[:8]
