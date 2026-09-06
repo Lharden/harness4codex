@@ -25,6 +25,8 @@ usuario perde o turno por causa de telemetria.
 
 from __future__ import annotations
 
+from . import _escopo
+
 import hashlib
 import json
 import os
@@ -92,95 +94,16 @@ def ligado(raiz: str | None = None) -> bool:
         return False
 
 
-def _dono_do_worktree(dir_com_git: str) -> str | None:
-    """`.git` como arquivo com `gitdir:` aponta o repositorio dono do worktree.
-
-    Submodulo NAO colapsa: ele aponta para `modules/`, e e outro repositorio de
-    verdade. Colapsa-lo misturaria dois projetos.
-    """
-    marcador = os.path.join(dir_com_git, ".git")
-    try:
-        if not os.path.isfile(marcador):
-            return None
-        with open(marcador, encoding="utf-8", errors="replace") as fh:
-            linha = fh.readline(4096).strip()
-    except OSError:
-        return None
-    if not linha.startswith("gitdir:"):
-        return None
-    alvo = linha[len("gitdir:") :].strip()
-    if not alvo:
-        return None
-    try:
-        if not os.path.isabs(alvo):
-            alvo = os.path.join(dir_com_git, alvo)
-        alvo = os.path.normpath(alvo)
-    except (OSError, ValueError):
-        return None
-    partes = alvo.replace("\\", "/").rstrip("/").split("/")
-    if len(partes) < 3 or partes[-2] != "worktrees":
-        return None
-    repo = os.path.dirname(os.path.dirname(os.path.dirname(alvo)))
-    return repo if os.path.isdir(repo) else None
-
-
-def _canonico(caminho: str) -> str:
-    """Resolve junction e symlink, para que dois caminhos nao virem dois escopos.
-
-    Sem isto, o MESMO repositorio alcancado por uma junction produz dois escopos
-    — reproduzido nesta maquina:
-
-        real: repo:real-49a2172a
-        link: repo:link-43b54d04
-
-    Duas sessoes "no mesmo projeto" nao se veriam, e o estado fragmentaria. E a
-    classe do incidente de 2026-07-28, chegando por outra porta.
-
-    **Custa 94,5 us contra 0,5 do `abspath`** — 190x mais, medido. Entra assim
-    mesmo porque e UMA chamada por resolucao (na raiz achada, e nao a cada passo
-    da subida), o que da 0,2% do corpo python do hook.
-
-    E foi medido que nao renomeia nada: em 22 diretorios reais desta maquina,
-    ZERO slugs mudariam. Se algum mudasse, aplicar isto fragmentaria os baldes
-    existentes — que e exatamente o defeito que ele conserta.
-
-    Degrada para o proprio caminho em qualquer erro: identidade pior e melhor
-    que hook morto.
-    """
-    try:
-        return os.path.realpath(caminho)
-    except (OSError, ValueError):
-        return caminho
-
-
 def escopo_de(cwd: str | None) -> str:
-    """`repo:<slug>` ou `dir:<slug>`. A especie fica no proprio valor.
+    """Delega para a fonte. Ver `_escopo.de_caminho`.
 
-    Sem subprocess, pela mesma razao do harness4claude: isto roda em todo prompt,
-    e um `git rev-parse` por prompt custaria mais que a resolucao inteira.
+    **Isto passou a honrar `HARNESS_SCOPE=global`, e antes nao honrava.** A
+    variavel nao aparecia neste arquivo: com ela ligada, o `mh quem` procurava
+    balizas em `global:maquina` enquanto este host as escrevia em `repo:<slug>`,
+    e a presenca reportava ninguem em silencio. Nao aparecia porque ninguem liga
+    a variavel — e o tipo de defeito que espera.
     """
-    limpo = (cwd or "").strip().strip("\r\n\t ")
-    if not limpo:
-        return "dir:unknown"
-    try:
-        p = os.path.abspath(limpo)
-    except (OSError, ValueError):
-        return "dir:unknown"
-    raiz, especie = None, "dir"
-    atual = p
-    while True:
-        if os.path.exists(os.path.join(atual, ".git")):
-            raiz, especie = _canonico(_dono_do_worktree(atual) or atual), "repo"
-            break
-        pai = os.path.dirname(atual)
-        if pai == atual:
-            break
-        atual = pai
-    alvo = raiz or _canonico(p)
-    base = os.path.basename(alvo.rstrip("/\\")) or "root"
-    base = re.sub(r"[^A-Za-z0-9._-]+", "-", base).strip("-") or "root"
-    digest = hashlib.sha256(os.path.normcase(alvo).encode("utf-8")).hexdigest()[:8]
-    return f"{especie}:{base[:40]}-{digest}"
+    return _escopo.de_caminho(cwd).valor
 
 
 def sessao_de(session_id: str | None) -> str | None:
