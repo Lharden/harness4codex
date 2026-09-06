@@ -46,12 +46,35 @@ def casa() -> str:
     )
 
 
+def sob_teste_sem_isolamento() -> bool:
+    """Roda dentro do pytest sem `MASTER_HARNESS_HOME` proprio?
+
+    Medido em 2026-09-05, poucos minutos depois de o espelho entrar: as suites
+    dos dois harness escreveram **44 linhas** no spool de producao, com
+    `scope_id: "dir:unknown"` e `session_id: null`. Evento falso num ledger de
+    coordenacao e pior que evento ausente — ele parece trabalho de verdade.
+
+    A regra e estreita de proposito. Casa **explicita** continua recebendo,
+    porque os testes de integracao do canal precisam escrever em algum lugar; o
+    que se recusa e a casa **padrao**, que e o unico caso em que a suite esta
+    poluindo sem ter pedido.
+
+    E o mesmo principio do enxerto que os juizes exigiram: um criterio que
+    aceita origem de teste blinda em vez de detectar.
+    """
+    return bool(os.environ.get("PYTEST_CURRENT_TEST")) and not os.environ.get(
+        "MASTER_HARNESS_HOME"
+    )
+
+
 def ligado(raiz: str | None = None) -> bool:
     """A escada autorizou a escrita?
 
     Sem `flags.json` — maquina onde o master-harness nunca passou — devolve
     False. Ausencia nao e autorizacao.
     """
+    if sob_teste_sem_isolamento():
+        return False
     try:
         with open(os.path.join(raiz or casa(), "flags.json"), encoding="utf-8") as fh:
             degrau = ((json.load(fh) or {}).get("flags") or {}).get("store_mode") or _DEGRAUS[0]
