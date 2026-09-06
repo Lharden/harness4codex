@@ -237,9 +237,23 @@ def espelhar(
         nome = "".join(c if c.isalnum() or c in "-._" else "-" for c in f"codex-{nu}")[:120]
         alvo = os.path.join(base, "spool", "outbox", nome + ".ndjson")
         os.makedirs(os.path.dirname(alvo), exist_ok=True)
-        with open(alvo, "a", encoding="utf-8", newline="\n") as fh:
-            fh.write(json.dumps(registro, ensure_ascii=False, sort_keys=True) + "\n")
-        return registro["event_id"]
+        # Retentativa contra a janela do `os.replace` do DRENO. Medido por teste
+        # de carga no master-harness: 0,56% a 1,11% dos appends morriam com
+        # `PermissionError` quando um dreno rodava em paralelo, e o evento sumia
+        # em silencio porque quem chama ignora o retorno.
+        import time as _time
+
+        texto = json.dumps(registro, ensure_ascii=False, sort_keys=True) + "\n"
+        for espera in (0.0, 0.002, 0.01):
+            if espera:
+                _time.sleep(espera)
+            try:
+                with open(alvo, "a", encoding="utf-8", newline="\n") as fh:
+                    fh.write(texto)
+                return registro["event_id"]
+            except OSError:
+                continue
+        return ""
     except (OSError, TypeError, ValueError, AttributeError):
         return ""
 
