@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 __all__ = [
     "bloco_de_presenca",
     "casa",
+    "drenar_canal",
     "escopo_de",
     "espelhar",
     "ligado",
@@ -280,6 +281,55 @@ def marcar_presenca(*, cwd: str | None, session_id: str | None) -> bool:
     except Exception:
         return False
 
+
+def drenar_canal() -> str:
+    """Move o outbox para o ledger. Devolve "" quando correu, ou o aviso.
+
+    Chamado no `Stop`, e nao no `SessionStart`: medido pelo painel nos eventos
+    desta maquina, `Stop` disparou **294 vezes** e `SessionEnd` **zero** — e o
+    `SessionStart` do Codex nao chama `log_event`, entao apoiar o dreno nele
+    seria apoiar em evento nao observado. E o que a decisao D-09 ja dizia: no
+    lado Codex, tudo que dependeria de `SessionEnd`/`PreCompact` acontece no
+    `Stop`.
+
+    **Silencioso quando corre bem.** A falha, essa, tem de aparecer: enquanto o
+    dreno era manual o humano via o traceback, e automatizar sem isso trocaria
+    um problema visivel por um invisivel.
+    """
+    if not ligado():
+        return ""
+    _p, base = _mh()
+    if _p is None:
+        return ""
+    import sqlite3
+
+    from mh import spool
+
+    con = None
+    try:
+        os.makedirs(base, exist_ok=True)
+        con = sqlite3.connect(os.path.join(base, "ledger.db"), timeout=2.0)
+        con.execute("PRAGMA journal_mode = WAL")
+        con.execute("PRAGMA busy_timeout = 250")
+        rel = spool.drenar(base, con)
+    except sqlite3.Error as exc:
+        rel = spool.RelatorioDreno(falha=f"{type(exc).__name__}: {exc}")
+    except Exception:
+        return ""
+    finally:
+        if con is not None:
+            con.close()
+    try:
+        spool.registrar_dreno(base, rel)
+    except Exception:
+        pass
+    if not rel.correu:
+        return (f"CANAL: o dreno de coordenacao FALHOU ({rel.falha}). "
+                "O outbox nao foi consumido e nada foi perdido.")
+    if rel.cercados or rel.ilegiveis:
+        return (f"CANAL: dreno com {len(rel.cercados)} cercado(s) e "
+                f"{len(rel.ilegiveis)} ilegivel(is).")
+    return ""
 
 def bloco_de_presenca(cwd: str | None) -> str:
     """A linha da vizinhanca, ou "" quando nao ha o que afirmar.

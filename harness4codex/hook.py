@@ -482,6 +482,20 @@ def _handle_stop(payload: dict[str, Any], store: HarnessStateStore) -> str:
         store.log_event("Stop", {"blocked": True, "reason": reason})
         return _block_stop(reason)
     store.log_event("Stop", {"blocked": False, "status": state.get("status")})
+    # Dreno do canal de coordenacao. Aqui e nao no `SessionStart`: medido pelo
+    # painel nos eventos desta maquina, `Stop` disparou 294 vezes e `SessionEnd`
+    # zero, e o `_handle_session_start` nao chama `log_event` — apoiar o dreno
+    # nele seria apoiar em evento nao observado. E o que D-09 ja dizia.
+    #
+    # O aviso vai para o LOG DE EVENTOS, e nunca para o retorno: aqui o retorno
+    # e `decision: block`, e transformar "o dreno falhou" em "nao termine a
+    # sessao" seria deixar um problema de telemetria interromper o trabalho.
+    try:
+        aviso = spool_mirror.drenar_canal()
+        if aviso:
+            store.log_event("CanalDreno", {"aviso": aviso})
+    except Exception:
+        pass
     return ""
 
 
