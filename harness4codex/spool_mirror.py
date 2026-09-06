@@ -32,7 +32,15 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-__all__ = ["casa", "escopo_de", "espelhar", "ligado", "sessao_de"]
+__all__ = [
+    "bloco_de_presenca",
+    "casa",
+    "escopo_de",
+    "espelhar",
+    "ligado",
+    "marcar_presenca",
+    "sessao_de",
+]
 
 #: Os degraus de `store_mode`, na ordem do ADR-001. O espelho so escreve de
 #: `dual_write` em diante — antes disso a escada ainda nao autorizou.
@@ -200,4 +208,103 @@ def espelhar(
             fh.write(json.dumps(registro, ensure_ascii=False, sort_keys=True) + "\n")
         return registro["event_id"]
     except (OSError, TypeError, ValueError, AttributeError):
+        return ""
+
+
+# ---------------------------------------------------------------------------
+# Presenca: quem mais trabalha neste escopo agora
+# ---------------------------------------------------------------------------
+# Aqui o modulo NAO e stdlib pura, e a diferenca e deliberada. O espelho do
+# spool escreve uma linha e por isso cabe inteiro em tres funcoes; a presenca
+# precisa consultar processo do sistema operacional, e uma quarta copia dessa
+# logica seria pior que uma dependencia macia.
+#
+# Macia: o `mh` e achado pelo marcador `~/.master-harness/mh-root` e importado
+# dentro de `try`. Ausente o marcador, ausente a presenca — e nao um hook morto.
+
+
+def _mh():
+    """Importa `mh.presenca` pelo marcador, ou devolve `(None, None)`."""
+    try:
+        base = casa()
+        with open(os.path.join(base, "mh-root"), encoding="utf-8") as fh:
+            raiz = fh.readline(4096).strip()
+        if not raiz or not os.path.isdir(raiz):
+            return (None, None)
+        import sys
+
+        if raiz not in sys.path:
+            sys.path.insert(0, raiz)
+        from mh import presenca as _p
+
+        return (_p, base)
+    except Exception:
+        return (None, None)
+
+
+def marcar_presenca(*, cwd: str | None, session_id: str | None) -> bool:
+    """Anuncia esta sessao do Codex. Best-effort e silencioso.
+
+    **Hoje sempre devolve False**, e isso e honesto e nao um bug: a baliza tem
+    de guardar o pid do PROCESSO DO HOST, e no Codex nao ha equivalente ao
+    `CLAUDE_PID`. Descobri-lo exigiria subir a cadeia de ancestrais — medido
+    pelo painel em 11,9 ms sobre 410 processos, uma vez por sessao.
+
+    Escrever com `os.getpid()` seria pior que nao escrever: a baliza morreria
+    junto com o processo do hook e a leitura a recolheria segundos depois. Foi
+    exatamente o que aconteceu do lado do Claude antes da correcao.
+
+    A funcao existe assim, com o motivo escrito, porque o oposto — nao existir —
+    esconderia que falta uma decisao. Quando alguem medir a subida de
+    ancestrais, e aqui que ela entra.
+    """
+    if not ligado():
+        return False
+    _p, base = _mh()
+    if _p is None:
+        return False
+    try:
+        pid = _p.pid_do_host("codex")
+        if pid is None:
+            return False
+        return _p.marcar(
+            base,
+            host="codex",
+            session_id=session_id or "",
+            escopo=escopo_de(cwd),
+            pid=pid,
+        )
+    except Exception:
+        return False
+
+
+def bloco_de_presenca(cwd: str | None) -> str:
+    """A linha da vizinhanca, ou "" quando nao ha o que afirmar.
+
+    **So faz afirmacao positiva.** `sozinho` e `nao_verificado` saem vazios, e
+    isso nao viola L-09: o hook nunca diz "voce esta sozinho". Quem distingue os
+    tres estados e `mh quem`, que sai 0/1/2.
+    """
+    try:
+        if not ligado():
+            return ""
+        _p, base = _mh()
+        if _p is None:
+            return ""
+        # `pid_proprio` explicito, e o `or -1` carrega a justificativa no lugar
+        # onde ela vale: a regra "ninguem se conta" precisa saber quem eu sou, e
+        # o Codex ainda nao sabe. Hoje isso e inofensivo porque
+        # `marcar_presenca` sempre devolve False — nao existe baliza minha que
+        # eu pudesse confundir comigo mesmo. `-1` nao e um pid possivel.
+        #
+        # Quando alguem medir a subida de ancestrais, `pid_do_host` passa a
+        # devolver o pid de verdade e o `or -1` deixa de disparar sozinho. E por
+        # isso que ele esta escrito assim, e nao como um `if` que alguem teria de
+        # lembrar de remover.
+        r = _p.vizinhos(base, escopo_de(cwd), pid_proprio=_p.pid_do_host("codex") or -1,
+                        host="codex")
+        if r.resposta != _p.ACOMPANHADO:
+            return ""
+        return "\n\nHARNESS VIZINHANCA: " + r.linha()
+    except Exception:
         return ""

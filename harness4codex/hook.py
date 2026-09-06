@@ -337,6 +337,14 @@ def _handle_session_start(event: str, store: HarnessStateStore) -> str:
 
 def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
     prompt = str(payload.get("prompt") or payload.get("user_prompt") or payload.get("message") or "")
+    # Presenca marcada ANTES de qualquer caminho de saida. Medido do lado do
+    # Claude: metade dos prompts toma o ramo de continuacao e retorna muito antes
+    # do fim — e sao justamente as sessoes que estao trabalhando. Marcar la
+    # embaixo faria a baliza envelhecer em quem esta ativo.
+    spool_mirror.marcar_presenca(
+        cwd=str(_cwd_from_payload(payload)),
+        session_id=str(payload.get("session_id") or payload.get("sessionId") or ""),
+    )
     classification = classify_prompt(prompt)
     store.expire_stale_pipeline()
     current = store.load()
@@ -349,7 +357,9 @@ def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessState
             else "Continue o pipeline ativo."
         )
         context = _append_workflow_context(_task_context(current, heading), payload)
-        return _context_output(event, _append_science_context(context, prompt))
+        context = _append_science_context(context, prompt)
+        return _context_output(event, context + spool_mirror.bloco_de_presenca(
+            str(_cwd_from_payload(payload))))
     state = store.start_task(classification, prompt)
     # Espelho de coordenacao (master-harness, degrau `store_mode: dual_write`).
     # Uma linha anexada, best-effort, sem leitura e sem bloqueio: e o que permite
@@ -372,6 +382,7 @@ def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessState
     context = _append_workflow_context(_classification_context(state), payload)
     context = _append_science_context(context, prompt)
     context = _append_lite_preview(context, classification.level, prompt, payload, store)
+    context += spool_mirror.bloco_de_presenca(str(_cwd_from_payload(payload)))
     return _context_output(event, context)
 
 
