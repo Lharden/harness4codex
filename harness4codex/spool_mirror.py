@@ -200,7 +200,10 @@ def espelhar(
         }
         # Mesma regra de `mh.spool.caminho_outbox(casa, "codex", <slug nu>)`: o
         # prefixo do host ja esta no nome do arquivo, entao o slug entra nu.
-        nu = sess.split(":", 1)[1] if sess else "sem-sessao"
+        # Sem sessao, o pid do ESCRITOR — nunca um rotulo fixo. `sem-sessao`
+        # punha todas as sessoes sem id no mesmo arquivo, e e a exclusividade do
+        # arquivo que torna o append sem lock seguro.
+        nu = sess.split(":", 1)[1] if sess else f"pid-{os.getpid()}"
         nome = "".join(c if c.isalnum() or c in "-._" else "-" for c in f"codex-{nu}")[:120]
         alvo = os.path.join(base, "spool", "outbox", nome + ".ndjson")
         os.makedirs(os.path.dirname(alvo), exist_ok=True)
