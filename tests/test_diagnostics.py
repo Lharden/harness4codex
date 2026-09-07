@@ -116,6 +116,58 @@ args = ["claims-mcp"]
     assert "FULL_LIFECYCLE_HOOKS" in codes
 
 
+
+def test_doctor_aceita_a_forma_que_a_producao_usa_env_vars(tmp_path):
+    """O ~/.codex/config.toml REAL nao tem `bearer_token_env_var`.
+
+    Medido em 2026-09-07: a chave aparece neste arquivo em oito lugares e em
+    NENHUM dos cinco servidores do config de producao. O obsidian de verdade
+    declara `env_vars = ["OBSIDIAN_API_KEY"]` e injeta o token no header dos
+    `args`. O resultado eram 175 testes verdes e o doctor reprovando uma
+    maquina configurada certo, com OBSIDIAN_TOKEN_MISSING, desde sempre.
+
+    Mesmo defeito que fez a presenca do harness4claude nunca funcionar em
+    producao enquanto a suite dela era verde: a suite media uma condicao que
+    a producao nao tem.
+    """
+    _write_config(
+        tmp_path,
+        """
+[features]
+hooks = true
+enable_mcp_apps = true
+
+[plugins."harness4codex@personal"]
+enabled = true
+
+[plugins."harness4claude@harness4claude"]
+enabled = false
+
+[mcp_servers.obsidian]
+command = "npx"
+args = ["-y", "mcp-remote", "https://127.0.0.1:27124/mcp/", "--header", "Authorization:Bearer ${OBSIDIAN_API_KEY}"]
+env_vars = ["OBSIDIAN_API_KEY"]
+
+[mcp_servers.science_harness]
+command = "shs"
+args = ["claims-mcp"]
+""",
+    )
+
+    report = run_doctor(
+        tmp_path,
+        env={"OBSIDIAN_API_KEY": "secret", "HARNESS_CONTROL_TOKEN": "lite-token"},
+        which=lambda name: r"C:\bin\shs.exe" if name == "shs" else None,
+        user_env={},
+    )
+
+    assert report.ok is True
+    assert not [check for check in report.checks if check.status == "fail"]
+    codes = {check.code for check in report.checks}
+    assert "OBSIDIAN_READY" in codes, "a forma de producao tem de passar"
+    assert "OBSIDIAN_TOKEN_MISSING" not in codes
+
+
 def test_doctor_marks_obsidian_restart_when_user_env_has_token_but_process_does_not(tmp_path):
     _write_config(
         tmp_path,

@@ -310,7 +310,28 @@ def run_doctor(
     if obsidian is None:
         checks.append(DiagnosticCheck("OBSIDIAN_MCP_MISSING", "fail", "The obsidian MCP server is not configured."))
     else:
+        # Duas formas de declarar o token, e a producao usa a segunda.
+        #
+        # Medido em 2026-09-07: `bearer_token_env_var` aparece aqui e em OITO
+        # lugares de `tests/test_diagnostics.py`, e em NENHUM dos cinco
+        # servidores do `~/.codex/config.toml` real. O obsidian de verdade
+        # declara `env_vars = ["OBSIDIAN_API_KEY"]` e injeta o token no header
+        # dos `args` — e esta funcao nunca olhava para `env_vars`.
+        #
+        # Consequencia: 175 testes verdes e o doctor reprovando uma maquina
+        # configurada certo, com OBSIDIAN_TOKEN_MISSING, desde sempre. A suite
+        # media uma condicao que a producao nao tem — o mesmo defeito que fez a
+        # presenca do harness4claude "nunca funcionar em producao" enquanto a
+        # suite dela era verde, porque injetava um PYTHONPATH que producao nao
+        # tinha.
+        #
+        # `bearer_token_env_var` continua valendo: pode haver configuracao por
+        # ai que a use, e tira-la trocaria um falso negativo por uma quebra.
         token_name = str(obsidian.get("bearer_token_env_var") or "")
+        if not token_name:
+            declaradas = obsidian.get("env_vars")
+            if isinstance(declaradas, (list, tuple)):
+                token_name = next((str(v) for v in declaradas if str(v).strip()), "")
         if token_name and process_env.get(token_name):
             checks.append(DiagnosticCheck("OBSIDIAN_READY", "pass", "Obsidian MCP token is visible to this process."))
         elif token_name and inherited_user_env.get(token_name):
