@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 try:
@@ -59,12 +60,26 @@ def test_skill_agent_metadata_uses_interface_schema():
     assert "  default_prompt:" in metadata
 
 
-def test_plugin_hook_uses_portable_plugin_root_commands():
-    config = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
-    command_hook = config["hooks"]["UserPromptSubmit"][0]["hooks"][0]
+def test_plugin_hook_commands_resolve_under_the_codex_windows_shell():
+    """B-18: o comando que o Windows executa precisa achar o plugin.
 
-    assert "PLUGIN_ROOT" in command_hook["command"]
-    assert "commandWindows" in command_hook
+    Medido em 2026-09-23 com o Codex 0.155.1: no Windows o `commandWindows`
+    substitui o `command` e roda no PowerShell Core. `%PLUGIN_ROOT%` e sintaxe
+    do cmd e chegava literal ao python, que nao achava o arquivo; os onze
+    eventos falhavam em toda sessao desde 9fbb71b (24/08). O teste anterior
+    exigia `commandWindows` e por isso aprovava o defeito.
+
+    `${PLUGIN_ROOT}` e substituido pelo proprio Codex antes de executar, e e
+    o que faz os hooks do `remember` funcionarem nesta maquina.
+    """
+    config = json.loads((ROOT / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+
+    for event, groups in config["hooks"].items():
+        for group in groups:
+            for handler in group["hooks"]:
+                windows_command = handler.get("commandWindows", handler["command"])
+                assert "${PLUGIN_ROOT}" in windows_command, event
+                assert not re.search(r"%[A-Za-z_][A-Za-z0-9_]*%", windows_command), event
 
 
 def test_plugin_registers_full_codex_lifecycle():

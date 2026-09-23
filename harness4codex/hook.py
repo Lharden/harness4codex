@@ -5,6 +5,7 @@ import json
 import re
 import sqlite3
 import sys
+import time
 import traceback
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from .harness_lite_adapter import preview_for_prompt
 from .memory import HarnessMemoryStore
 from . import spool_mirror
 from .science_adapter import science_context
-from .state import HarnessStateStore, store_for_payload
+from .state import HarnessStateStore, default_harness_home, store_for_payload
 from .workflow import load_workflow
 
 VERIFICATION_PATTERNS = [
@@ -565,12 +566,29 @@ def _log_boundary_error() -> None:
         return
 
 
+def _record_heartbeat(payload: dict[str, Any]) -> None:
+    # Mede a CHAMADA, nao o trabalho: grava antes de qualquer handler. O B-18
+    # ficou um mes sem nenhum hook rodar (o Codex executava `%PLUGIN_ROOT%`
+    # literal no PowerShell) e nada no disco dizia isso; o doctor confronta
+    # este arquivo com os turnos que o proprio Codex registra nos rollouts.
+    event = _event_name(payload)
+    if not re.fullmatch(r"[A-Za-z]+", event):
+        return
+    try:
+        beats = default_harness_home() / "heartbeats"
+        beats.mkdir(parents=True, exist_ok=True)
+        (beats / event).write_text(repr(time.time()), encoding="utf-8")
+    except OSError:
+        return
+
+
 def main() -> int:
     raw = sys.stdin.buffer.read()
     if not raw.strip():
         return 0
     try:
         payload = _decode_payload(raw)
+        _record_heartbeat(payload)
         output = handle_payload(payload)
         if output:
             _emit(output)

@@ -1,8 +1,12 @@
+import io
 import json
 import sqlite3
+import sys
+import time
 
 import pytest
 
+from harness4codex import hook
 from harness4codex.hook import (
     _decode_payload,
     _extract_exit_code,
@@ -17,6 +21,40 @@ from harness4codex.state import HarnessStateStore
 def _decode(output: str) -> dict:
     assert output
     return json.loads(output)
+
+
+def _run_main(monkeypatch, payload: dict) -> int:
+    monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode("utf-8"))))
+    monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(io.BytesIO()))
+    return hook.main()
+
+
+def test_main_records_heartbeat_for_the_event(tmp_path, monkeypatch):
+    """B-18: o hook ficou um mes sem rodar e nada no disco dizia isso.
+
+    O heartbeat e o sinal que o doctor confronta com os turnos que o proprio
+    Codex registra nos rollouts.
+    """
+    monkeypatch.setenv("HARNESS4CODEX_HOME", str(tmp_path))
+    before = time.time()
+
+    assert _run_main(monkeypatch, {"hook_event_name": "UserPromptSubmit", "prompt": "oi"}) == 0
+
+    beat = float((tmp_path / "heartbeats" / "UserPromptSubmit").read_text(encoding="utf-8"))
+    assert before <= beat <= time.time()
+
+
+def test_main_records_heartbeat_before_handling(tmp_path, monkeypatch):
+    """Mede a chamada, nao o trabalho: um handler que quebra ainda foi chamado."""
+    monkeypatch.setenv("HARNESS4CODEX_HOME", str(tmp_path))
+
+    def explode(_payload, harness_home=None):
+        raise RuntimeError("handler quebrado")
+
+    monkeypatch.setattr(hook, "handle_payload", explode)
+
+    assert _run_main(monkeypatch, {"hook_event_name": "Stop"}) == 0
+    assert (tmp_path / "heartbeats" / "Stop").is_file()
 
 
 def test_user_prompt_submit_injects_harness_context(tmp_path):

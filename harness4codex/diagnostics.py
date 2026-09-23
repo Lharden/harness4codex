@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 try:
@@ -145,6 +148,115 @@ def _hooks_without_commands(plugin_root: Path) -> set[str]:
     return invalid
 
 
+# Sintaxe de variavel do cmd. Medido em 2026-09-23 (Codex 0.155.1): no Windows o
+# hook roda no PowerShell Core, que entrega `%PLUGIN_ROOT%` literal ao processo.
+# Foi o B-18: os onze eventos falharam em toda sessao de 24/08 a 23/09.
+_CMD_VARIABLE = re.compile(r"%[A-Za-z_][A-Za-z0-9_]*%")
+
+
+def _unportable_hook_commands(plugin_root: Path) -> list[str]:
+    try:
+        payload = json.loads((plugin_root / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    hooks = payload.get("hooks") if isinstance(payload, dict) else None
+    found: set[str] = set()
+    for event, groups in (hooks.items() if isinstance(hooks, dict) else ()):
+        for group in groups if isinstance(groups, list) else ():
+            handlers = group.get("hooks") if isinstance(group, dict) else None
+            for handler in handlers if isinstance(handlers, list) else ():
+                if not isinstance(handler, dict):
+                    continue
+                # O Windows executa `commandWindows` quando existe; senao, `command`.
+                command = handler.get("commandWindows", handler.get("command"))
+                match = _CMD_VARIABLE.search(command) if isinstance(command, str) else None
+                if match:
+                    found.add(f"{event}: {match.group(0)}")
+    return sorted(found)
+
+
+# Turnos que autorizam veredito de atividade. Medido em 2026-09-23 nos rollouts
+# de setembro: `exec` teve injecao de hook em 20 de 20 e `cli` em 6 de 8; os 492
+# rollouts do Desktop sem injecao sao jobs programaticos em que nenhum hook
+# dispara (nem os do harness4claude), e subagentes nao passam por
+# UserPromptSubmit. Esses nao provam nada e por isso nao reprovam nada.
+_ASSERTABLE_TURN_SOURCES = {"cli", "exec"}
+# O hook dispara segundos DEPOIS do `task_started` do mesmo turno; a folga cobre
+# isso e o relogio.
+HEARTBEAT_GRACE_SECONDS = 300
+# Turno mais velho que isto nao entra: o doctor responde "esta rodando agora?".
+ACTIVITY_WINDOW_SECONDS = 7 * 24 * 3600
+
+
+def _read_heartbeat(harness_dir: Path, event: str) -> float | None:
+    try:
+        value = float((harness_dir / "heartbeats" / event).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _cli_turns_after(home: Path, since: float) -> list[float]:
+    sessions = home / "sessions"
+    if not sessions.is_dir():
+        return []
+    turns: list[float] = []
+    for path in sessions.rglob("rollout-*.jsonl"):
+        try:
+            if path.stat().st_mtime <= since:
+                continue
+            lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            continue
+        if not lines:
+            continue
+        try:
+            meta = json.loads(lines[0]).get("payload")
+        except (ValueError, AttributeError):
+            continue
+        # Subagente traz `source` como objeto (`{"subagent": ...}`), nao string.
+        source = meta.get("source") if isinstance(meta, dict) else None
+        if not isinstance(source, str) or source not in _ASSERTABLE_TURN_SOURCES:
+            continue
+        for line in lines[1:]:
+            if '"task_started"' not in line:
+                continue
+            try:
+                started = (json.loads(line).get("payload") or {}).get("started_at")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(started, (int, float)) and started > since:
+                turns.append(float(started))
+    return turns
+
+
+def _iso(moment: float) -> str:
+    return datetime.fromtimestamp(moment, timezone.utc).isoformat(timespec="seconds")
+
+
+def _hook_activity_check(harness_dir: Path, home: Path, installed_at: float | None, now: float) -> DiagnosticCheck:
+    beat = _read_heartbeat(harness_dir, "UserPromptSubmit")
+    reference = beat if beat is not None else installed_at
+    if reference is not None:
+        since = max(reference, now - ACTIVITY_WINDOW_SECONDS)
+        missed = [turn for turn in _cli_turns_after(home, since) if turn > since + HEARTBEAT_GRACE_SECONDS]
+        if missed:
+            fired = f"last fired at {_iso(beat)}" if beat is not None else "never fired since this plugin was installed"
+            return DiagnosticCheck(
+                "HOOK_INACTIVE",
+                "fail",
+                f"{len(missed)} Codex CLI turn(s) ran after {_iso(since)}, the newest at {_iso(max(missed))}, "
+                f"but the UserPromptSubmit hook {fired}.",
+            )
+    if beat is not None and now - beat <= ACTIVITY_WINDOW_SECONDS:
+        return DiagnosticCheck("HOOK_ACTIVE", "pass", f"UserPromptSubmit hook last fired at {_iso(beat)}.")
+    return DiagnosticCheck(
+        "HOOK_ACTIVITY_NOT_VERIFIED",
+        "warn",
+        "nao_verificado: no recent UserPromptSubmit heartbeat and no Codex CLI turn to confront it with.",
+    )
+
+
 def _state_database_checks(home: Path) -> list[DiagnosticCheck]:
     databases = set((home / "harness").rglob("harness.db")) if (home / "harness").is_dir() else set()
     if (home / "harness.db").is_file():
@@ -186,6 +298,7 @@ def run_doctor(
     which: Callable[[str], str | None] = shutil.which,
     user_env: Mapping[str, str] | None = None,
     source_root: str | Path | None = None,
+    now: float | None = None,
 ) -> DoctorReport:
     home = Path(codex_home).expanduser().resolve()
     process_env = os.environ if env is None else env
@@ -464,6 +577,25 @@ def run_doctor(
         )
     else:
         checks.append(DiagnosticCheck("FULL_LIFECYCLE_HOOKS", "pass", "All Codex lifecycle hooks are registered."))
+
+    unportable = _unportable_hook_commands(inspected_plugin)
+    if unportable:
+        checks.append(
+            DiagnosticCheck(
+                "HOOK_COMMAND_NOT_PORTABLE",
+                "fail",
+                "Hook commands use cmd-style variables, which reach the Codex Windows shell unexpanded: "
+                + ", ".join(unportable),
+            )
+        )
+
+    harness_dir = Path(process_env.get("HARNESS4CODEX_HOME") or home / "harness").expanduser()
+    installed_hooks = active_plugin / "hooks" / "hooks.json" if active_plugin is not None else None
+    try:
+        installed_at = installed_hooks.stat().st_mtime if installed_hooks is not None else None
+    except OSError:
+        installed_at = None
+    checks.append(_hook_activity_check(harness_dir, home, installed_at, time.time() if now is None else now))
 
     checks.extend(_state_database_checks(home))
 

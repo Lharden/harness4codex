@@ -1,5 +1,7 @@
 import json
+import os
 import sqlite3
+import time
 
 from harness4codex.diagnostics import run_doctor
 
@@ -402,3 +404,136 @@ args = ["claims-mcp"]
     state_check = next(check for check in report.checks if check.code == "SCOPED_STATE_DATABASES")
     assert state_check.status == "pass"
     assert "2" in state_check.message
+
+
+HEALTHY_CONFIG = """
+[features]
+hooks = true
+enable_mcp_apps = true
+[plugins."harness4codex@personal"]
+enabled = true
+[mcp_servers.obsidian]
+bearer_token_env_var = "OBSIDIAN_API_KEY"
+[mcp_servers.science_harness]
+command = "shs"
+args = ["claims-mcp"]
+"""
+
+
+def _doctor(home, now=None):
+    return run_doctor(
+        home,
+        env={"OBSIDIAN_API_KEY": "secret", "HARNESS_CONTROL_TOKEN": "token"},
+        which=lambda name: "shs" if name == "shs" else None,
+        user_env={},
+        now=now,
+    )
+
+
+def _check(report, code):
+    return next(check for check in report.checks if check.code == code)
+
+
+def _installed_at(home, moment):
+    active_hooks = home / "plugins" / "cache" / "personal" / "harness4codex" / "1.1.0" / "hooks" / "hooks.json"
+    os.utime(active_hooks, (moment, moment))
+
+
+def _write_rollout(home, started_at, *, source="exec", originator="codex_exec", name="a"):
+    path = home / "sessions" / "2026" / "09" / "23" / f"rollout-{name}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        {"type": "session_meta", "payload": {"source": source, "originator": originator}},
+        {"type": "event_msg", "payload": {"type": "task_started", "started_at": int(started_at)}},
+    ]
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+    os.utime(path, (started_at + 30, started_at + 30))
+
+
+def _write_heartbeat(home, moment, event="UserPromptSubmit"):
+    beat = home / "harness" / "heartbeats" / event
+    beat.parent.mkdir(parents=True, exist_ok=True)
+    beat.write_text(str(moment), encoding="utf-8")
+
+
+def test_doctor_rejects_cmd_style_variables_in_hook_commands(tmp_path):
+    """B-18: `%PLUGIN_ROOT%` chega literal ao PowerShell em que o Codex roda o hook."""
+    _write_config(tmp_path, HEALTHY_CONFIG)
+    active = tmp_path / "plugins" / "cache" / "personal" / "harness4codex" / "1.1.0"
+    broken = {
+        "type": "command",
+        "command": 'python "${PLUGIN_ROOT}/hooks/codex_harness_hook.py"',
+        "commandWindows": 'python "%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py"',
+    }
+    (active / "hooks" / "hooks.json").write_text(
+        json.dumps({"hooks": {event: [{"hooks": [broken]}] for event in REQUIRED_HOOKS}}), encoding="utf-8"
+    )
+
+    check = _check(_doctor(tmp_path), "HOOK_COMMAND_NOT_PORTABLE")
+
+    assert check.status == "fail"
+    assert "%PLUGIN_ROOT%" in check.message
+
+
+def test_doctor_fails_when_cli_turns_ran_since_install_and_hook_never_fired(tmp_path):
+    """O caso exato do B-18: o Codex abriu turnos e o hook nunca deixou rastro."""
+    now = time.time()
+    _write_config(tmp_path, HEALTHY_CONFIG)
+    _installed_at(tmp_path, now - 3 * 3600)
+    _write_rollout(tmp_path, now - 3600)
+
+    report = _doctor(tmp_path, now=now)
+
+    check = _check(report, "HOOK_INACTIVE")
+    assert check.status == "fail"
+    assert report.ok is False
+
+
+def test_doctor_fails_when_cli_turns_are_newer_than_the_last_heartbeat(tmp_path):
+    now = time.time()
+    _write_config(tmp_path, HEALTHY_CONFIG)
+    _write_heartbeat(tmp_path, now - 5 * 3600)
+    _write_rollout(tmp_path, now - 3600)
+
+    assert _check(_doctor(tmp_path, now=now), "HOOK_INACTIVE").status == "fail"
+
+
+def test_doctor_reports_the_hook_active_when_heartbeat_follows_the_turn(tmp_path):
+    now = time.time()
+    _write_config(tmp_path, HEALTHY_CONFIG)
+    _write_rollout(tmp_path, now - 3600)
+    _write_heartbeat(tmp_path, now - 3600 + 10)
+
+    check = _check(_doctor(tmp_path, now=now), "HOOK_ACTIVE")
+
+    assert check.status == "pass"
+
+
+def test_doctor_does_not_judge_desktop_or_subagent_turns(tmp_path):
+    """Medido em 2026-09-23: 492 rollouts do Desktop sem injecao de harness nenhum.
+
+    Sao jobs programaticos em que nenhum hook dispara, entao nao autorizam
+    veredito. Sem observacao assertivel o resultado e nao verificado (L-09).
+    """
+    now = time.time()
+    _write_config(tmp_path, HEALTHY_CONFIG)
+    _installed_at(tmp_path, now - 3 * 3600)
+    _write_rollout(tmp_path, now - 3600, source="vscode", originator="Codex Desktop", name="desktop")
+    _write_rollout(
+        tmp_path, now - 3600, source={"subagent": {"other": "guardian"}}, originator="codex-tui", name="sub"
+    )
+
+    report = _doctor(tmp_path, now=now)
+
+    check = _check(report, "HOOK_ACTIVITY_NOT_VERIFIED")
+    assert check.status == "warn"
+    assert "HOOK_INACTIVE" not in {item.code for item in report.checks}
+
+
+def test_doctor_reports_activity_not_verified_without_any_observation(tmp_path):
+    _write_config(tmp_path, HEALTHY_CONFIG)
+
+    report = _doctor(tmp_path)
+
+    assert _check(report, "HOOK_ACTIVITY_NOT_VERIFIED").status == "warn"
+    assert report.ok is True

@@ -7,7 +7,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex session"
           }
@@ -20,7 +19,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex classify"
           }
@@ -34,7 +32,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex guard"
           }
@@ -48,7 +45,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex permission"
           }
@@ -62,7 +58,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex state"
           }
@@ -75,7 +70,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex handoff"
           }
@@ -88,7 +82,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex resume"
           }
@@ -101,7 +94,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex node start"
           }
@@ -114,7 +106,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex node census"
           }
@@ -127,7 +118,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 10,
             "statusMessage": "Harness4Codex verify"
           }
@@ -140,7 +130,6 @@
           {
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
-            "commandWindows": "python \"%PLUGIN_ROOT%\\hooks\\codex_harness_hook.py\"",
             "timeout": 3,
             "statusMessage": "Harness4Codex flush"
           }
