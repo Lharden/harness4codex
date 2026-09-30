@@ -23,6 +23,22 @@ def _decode(output: str) -> dict:
     return json.loads(output)
 
 
+def _feature_no_tdd(home) -> None:
+    """Abre a task de feature pelo prompt e a leva a `tdd` pelos caminhos de producao.
+
+    O Stop so cobra teste da primeira fase de implementacao em diante
+    (`tests/test_portao_pre_implementacao.py`); estes testes medem bloqueio,
+    schema e escalada, entao posicionam a task onde o bloqueio existe."""
+    from harness4codex.cli import _sync_task_projection
+
+    handle_payload({"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."}, harness_home=home)
+    store = HarnessStateStore(home)
+    task_id = store.load()["task_id"]
+    task = store.database.record_artifact(task_id, "spec-light", "docs/specs/csv-spec-light.md", None)
+    task = store.database.transition(task_id, "tdd", expected_revision=task["revision"])
+    _sync_task_projection(home, task)
+
+
 def _run_main(monkeypatch, payload: dict) -> int:
     monkeypatch.setattr(sys, "stdin", io.TextIOWrapper(io.BytesIO(json.dumps(payload).encode("utf-8"))))
     monkeypatch.setattr(sys, "stdout", io.TextIOWrapper(io.BytesIO()))
@@ -270,10 +286,7 @@ def test_post_tool_use_promotes_after_multiple_files(tmp_path):
 
 
 def test_stop_blocks_unverified_active_pipeline_once(tmp_path):
-    handle_payload(
-        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
-        harness_home=tmp_path,
-    )
+    _feature_no_tdd(tmp_path)
 
     output = handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path)
 
@@ -283,10 +296,7 @@ def test_stop_blocks_unverified_active_pipeline_once(tmp_path):
 
 
 def test_stop_keeps_blocking_until_fresh_verification(tmp_path):
-    handle_payload(
-        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
-        harness_home=tmp_path,
-    )
+    _feature_no_tdd(tmp_path)
 
     first = _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))
     second = _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))
@@ -295,10 +305,7 @@ def test_stop_keeps_blocking_until_fresh_verification(tmp_path):
 
 
 def test_stop_block_output_uses_codex_stop_schema_only(tmp_path):
-    handle_payload(
-        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
-        harness_home=tmp_path,
-    )
+    _feature_no_tdd(tmp_path)
 
     output = handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path)
 
@@ -439,10 +446,7 @@ def test_zero_collected_tests_do_not_satisfy_stop_gate(tmp_path):
 
 
 def test_stop_escalates_after_two_automatic_continuations_then_allows_human_gate(tmp_path):
-    handle_payload(
-        {"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."},
-        harness_home=tmp_path,
-    )
+    _feature_no_tdd(tmp_path)
 
     assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
     assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"

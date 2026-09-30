@@ -17,6 +17,7 @@ from .memory import HarnessMemoryStore
 from . import spool_mirror
 from .science_adapter import science_context
 from .state import HarnessStateStore, default_harness_home, store_for_payload
+from .state_db import cobra_evidencia_nesta_fase, tipo_de_evidencia
 from .workflow import load_workflow
 
 VERIFICATION_PATTERNS = [
@@ -461,11 +462,67 @@ def _handle_post_tool(event: str, payload: dict[str, Any], store: HarnessStateSt
     return ""
 
 
+def _task_do_banco(state: dict[str, Any], store: HarnessStateStore) -> dict[str, Any] | None:
+    """A task da projecao, lida do banco, que e a autoridade sobre fase e marca.
+
+    `None` quando nao ha `task_id` ou a leitura falha; quem le trata `None` como
+    "cobra" (falha fechada)."""
+    task_id = state.get("task_id")
+    if not task_id:
+        return None
+    try:
+        return store.database.task(str(task_id))
+    except Exception:  # noqa: BLE001 - erro de leitura nunca abre o portao
+        return None
+
+
+def _cobra_nesta_fase(task: dict[str, Any] | None) -> bool:
+    """O Stop cobra evidencia desta task agora? A regra mora em
+    `state_db.cobra_evidencia_nesta_fase`.
+
+    Ate 2026-09-30 o Stop cobrava em toda fase e todo `kind`: pedia pytest em
+    `discuss` de uma L2-architecture num repositorio sem codigo, e em qualquer
+    fase de docs. Ver
+    `docs/superpowers/specs/portao-stop-pre-implementacao-diagnostico.md`.
+    Este filtro so REMOVE bloqueio, e so quando o banco diz que a fase nao e
+    cobrada; sem task legivel no banco, cobra como antes."""
+    if task is None:
+        return True
+    return cobra_evidencia_nesta_fase(
+        task.get("kind"),
+        task.get("pipeline") or [],
+        task.get("phase"),
+        passou_pela_implementacao=bool(task.get("passou_pela_implementacao")),
+    )
+
+
+def _motivo_do_portao(state: dict[str, Any], store: HarnessStateStore, task: dict[str, Any] | None) -> str:
+    """O texto do bloqueio segue o tipo de evidencia que a task exige."""
+    if task is not None and tipo_de_evidencia(task.get("kind")) == "docs":
+        return (
+            "HARNESS4CODEX verification gate: this docs task is verified by a report, not by a test run. "
+            "Write the verification report (claims checked against their sources), then record it with "
+            f'`harness4codex evidence record --home "{store.memory_home}" --task {state.get("task_id")} '
+            "--type docs --command <report-path> --exit-code 0 --tests-collected <N> --tests-passed <N>` "
+            "(N = claims checked and confirmed) before the final response."
+        )
+    return (
+        "HARNESS4CODEX verification gate: continue with codex-harness-workflow and run "
+        "superpowers:verification-before-completion before the final response."
+    )
+
+
 def _handle_stop(payload: dict[str, Any], store: HarnessStateStore) -> str:
     if payload.get("stop_hook_active") or payload.get("stopHookActive"):
         return ""
     state = store.load()
-    if state.get("status") == "active" and state.get("pipeline") and not state.get("verified"):
+    task = _task_do_banco(state, store)
+    if (
+        state.get("status") == "active"
+        and state.get("pipeline")
+        and not state.get("verified")
+        and _cobra_nesta_fase(task)
+    ):
         continuations = int(state.get("stop_continuations") or 0)
         if continuations >= 2:
             store.set_pending_gate("escalation")
@@ -476,13 +533,13 @@ def _handle_stop(payload: dict[str, Any], store: HarnessStateStore) -> str:
             store.log_event("Stop", {"blocked": True, "reason": reason, "gate": "escalation"})
             return _block_stop(reason)
         store.increment_stop_continuations()
-        reason = (
-            "HARNESS4CODEX verification gate: continue with codex-harness-workflow and run "
-            "superpowers:verification-before-completion before the final response."
-        )
+        reason = _motivo_do_portao(state, store, task)
         store.log_event("Stop", {"blocked": True, "reason": reason})
         return _block_stop(reason)
-    store.log_event("Stop", {"blocked": False, "status": state.get("status")})
+    store.log_event(
+        "Stop",
+        {"blocked": False, "status": state.get("status"), "phase": task.get("phase") if task else None},
+    )
     # Dreno do canal de coordenacao. Aqui e nao no `SessionStart`: medido pelo
     # painel nos eventos desta maquina, `Stop` disparou 294 vezes e `SessionEnd`
     # zero, e o `_handle_session_start` nao chama `log_event` — apoiar o dreno

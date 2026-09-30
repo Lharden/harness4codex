@@ -26,6 +26,67 @@ ARTIFACT_OBLIGATIONS = {
 }
 
 
+#: Que evidencia verifica cada `kind` de task. O que nao esta aqui e verificado
+#: por teste; `kind` nulo ou desconhecido cai em `test`.
+#:
+#: Ate 2026-09-30 so `test` ligava `verified` e `complete` so aceitava teste:
+#: uma task de docs, cujas pipelines nao tem fase que produza teste, so fechava
+#: fabricando pytest. Porta da decisao D3 do harness4claude
+#: (`docs/specs/portao-stop-sem-codigo-plano.md`). Ver
+#: `docs/superpowers/specs/portao-stop-pre-implementacao-diagnostico.md`.
+EVIDENCIA_DO_KIND = {"docs": "docs"}
+
+#: Tipos de evidencia cujos numeros sao declarados por quem verificou, e que por
+#: isso so valem ancorados no hash de um relatorio em disco (D3).
+EVIDENCIA_COM_RELATORIO = frozenset({"docs"})
+
+#: Tipos de evidencia que so podem existir na ULTIMA fase da pipeline (D1).
+EVIDENCIA_NA_FASE_FINAL = frozenset({"docs"})
+
+#: As fases que produzem teste. Para o tipo `test`, o Stop cobra a partir da
+#: primeira delas na pipeline da task, e em todas as seguintes. Pipeline de tipo
+#: `test` sem nenhuma (hoje so `review`) cobra em toda fase (D-G2);
+#: `tests/test_portao_pre_implementacao.py::test_AC10_*` amarra o conjunto ao
+#: contrato.
+FASES_DE_IMPLEMENTACAO = frozenset({"tdd", "systematic-debugging"})
+
+#: O evento que `transition` e `resolve_gate` gravam quando o avanco sai de uma
+#: fase de implementacao ou entra nela (D-G3, D-G4). Reclassificar volta a
+#: pipeline ao indice 0; sem a marca, uma task com codigo escrito no `tdd`
+#: sairia do portao so por ter sido reclassificada. `start_task`,
+#: `confirm_classification` e `reclassify` NAO gravam: `systematic-debugging` e
+#: a fase 1 de toda pipeline de bug, e corrigir um L1-bug para L2-feature antes
+#: de qualquer trabalho nao e avanco.
+EVENTO_IMPLEMENTACAO = "passou-pela-implementacao"
+
+
+def tipo_de_evidencia(kind: str | None) -> str:
+    """O `evidence_type` que liga `verified` numa task deste `kind`."""
+    return EVIDENCIA_DO_KIND.get(str(kind or ""), "test")
+
+
+def cobra_evidencia_nesta_fase(
+    kind: str | None,
+    pipeline: list[str],
+    phase: str | None,
+    *,
+    passou_pela_implementacao: bool = False,
+) -> bool:
+    """O Stop deve cobrar evidencia desta task na fase em que ela esta?
+
+    Docs: so na ultima fase, a que produz a verificacao (D1). Teste: da primeira
+    fase de `FASES_DE_IMPLEMENTACAO` da pipeline em diante, ou em qualquer fase
+    se a task ja avancou por uma delas. Falha fechada: pipeline de teste sem fase
+    de implementacao cobra em toda fase, e fase fora da pipeline cobra.
+    """
+    if tipo_de_evidencia(kind) in EVIDENCIA_NA_FASE_FINAL:
+        return bool(pipeline) and phase == pipeline[-1]
+    if passou_pela_implementacao or phase not in pipeline:
+        return True
+    inicio = next((indice for indice, fase in enumerate(pipeline) if fase in FASES_DE_IMPLEMENTACAO), 0)
+    return pipeline.index(phase) >= inicio
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -322,12 +383,16 @@ class HarnessDatabase:
                 "ORDER BY id DESC LIMIT 1",
                 (task_id,),
             ).fetchone()
+            passou = self._passou_pela_implementacao(connection, task_id)
         pending_gate = None
         if gate:
             pending_gate = str(gate["gate_type"])
             if gate["subject_id"]:
                 pending_gate += f":{gate['subject_id']}"
-        return self._render_task(row, pending_gate)
+        renderizada = self._render_task(row, pending_gate)
+        # Lido aqui para o hook de Stop decidir com o fato que so o banco guarda.
+        renderizada["passou_pela_implementacao"] = passou
+        return renderizada
 
     def current_task(self, scope_id: str) -> dict[str, Any] | None:
         placeholders = ",".join("?" for _ in ACTIVE_STATUSES)
@@ -701,6 +766,7 @@ class HarnessDatabase:
                     "INSERT INTO gates(task_id, gate_type, status, created_at) VALUES (?, ?, 'pending', ?)",
                     (task_id, to_phase, utc_now()),
                 )
+            self._marcar_implementacao(connection, row, current_phase, to_phase)
         return self.task(task_id)
 
     def resolve_gate(
@@ -741,6 +807,7 @@ class HarnessDatabase:
                 "INSERT INTO transitions(task_id, from_phase, to_phase, revision, created_at) VALUES (?, ?, ?, ?, ?)",
                 (task_id, gate_type, next_phase, new_revision, utc_now()),
             )
+            self._marcar_implementacao(connection, row, gate_type, next_phase)
         return self.task(task_id)
 
     def touch_file(self, task_id: str, path: str) -> dict[str, Any]:
@@ -773,12 +840,17 @@ class HarnessDatabase:
     ) -> dict[str, Any]:
         with self._write() as connection:
             row = self._locked_task(connection, task_id)
+            # A regua e a do tipo que ESTA task exige. Evidencia de outro tipo e
+            # historico e nao mexe em `verified` para nenhum lado: um pytest nao
+            # verifica uma doc, e um pytest vermelho tambem nao a desverifica.
+            exigido = tipo_de_evidencia(row["kind"])
             valid_test = (
-                evidence_type == "test"
+                evidence_type == exigido
                 and exit_code == 0
                 and isinstance(tests_collected, int)
                 and tests_collected > 0
                 and tests_passed == tests_collected
+                and (exigido not in EVIDENCIA_COM_RELATORIO or output_hash is not None)
             )
             connection.execute(
                 """
@@ -802,12 +874,12 @@ class HarnessDatabase:
             connection.execute(
                 "UPDATE tasks SET verified = ?, status = ?, revision = revision + 1, updated_at = ? WHERE task_id = ?",
                 (
-                    1 if valid_test else 0 if evidence_type == "test" else int(row["verified"]),
+                    1 if valid_test else 0 if evidence_type == exigido else int(row["verified"]),
                     (
                         "verified"
                         if valid_test
                         else "active"
-                        if evidence_type == "test" and row["status"] == "verified"
+                        if evidence_type == exigido and row["status"] == "verified"
                         else row["status"]
                     ),
                     utc_now(),
@@ -820,7 +892,7 @@ class HarnessDatabase:
         with self._write() as connection:
             row = self._locked_task(connection, task_id)
             self._expect_revision(row, expected_revision)
-            if not bool(row["verified"]) or not self._has_fresh_test_evidence(connection, row):
+            if not bool(row["verified"]) or not self._has_fresh_evidence(connection, row):
                 raise StateTransitionError("task requires fresh verification evidence")
             pipeline = json.loads(row["pipeline_json"])
             if pipeline and int(row["phase_index"]) != len(pipeline) - 1:
@@ -870,20 +942,62 @@ class HarnessDatabase:
         )
 
     @staticmethod
-    def _has_fresh_test_evidence(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
+    def _has_fresh_evidence(connection: sqlite3.Connection, row: sqlite3.Row) -> bool:
+        """A ultima evidencia do tipo que esta task exige, na revisao atual, passa."""
+        exigido = tipo_de_evidencia(row["kind"])
+        com_relatorio = 1 if exigido in EVIDENCIA_COM_RELATORIO else 0
         return (
             connection.execute(
                 """
             SELECT 1 FROM evidence
-            WHERE task_id = ? AND code_revision = ? AND evidence_type = 'test'
+            WHERE task_id = ? AND code_revision = ? AND evidence_type = ?
               AND exit_code = 0 AND tests_collected > 0 AND tests_passed = tests_collected
+              AND (? = 0 OR output_hash IS NOT NULL)
               AND id = (
                   SELECT MAX(id) FROM evidence
-                  WHERE task_id = ? AND code_revision = ? AND evidence_type = 'test'
+                  WHERE task_id = ? AND code_revision = ? AND evidence_type = ?
               )
             LIMIT 1
             """,
-                (row["task_id"], row["code_revision"], row["task_id"], row["code_revision"]),
+                (
+                    row["task_id"],
+                    row["code_revision"],
+                    exigido,
+                    com_relatorio,
+                    row["task_id"],
+                    row["code_revision"],
+                    exigido,
+                ),
+            ).fetchone()
+            is not None
+        )
+
+    @staticmethod
+    def _marcar_implementacao(
+        connection: sqlite3.Connection, row: sqlite3.Row, de: str | None, para: str | None
+    ) -> None:
+        """Grava `EVENTO_IMPLEMENTACAO` quando o AVANCO sai de uma fase de
+        implementacao ou entra nela. So `transition` e `resolve_gate` chamam, e
+        so depois de o avanco ter passado por todas as recusas."""
+        if de not in FASES_DE_IMPLEMENTACAO and para not in FASES_DE_IMPLEMENTACAO:
+            return
+        connection.execute(
+            "INSERT INTO events(task_id, scope_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                row["task_id"],
+                row["scope_id"],
+                EVENTO_IMPLEMENTACAO,
+                json.dumps({"de": de, "para": para}, sort_keys=True),
+                utc_now(),
+            ),
+        )
+
+    @staticmethod
+    def _passou_pela_implementacao(connection: sqlite3.Connection, task_id: str) -> bool:
+        return (
+            connection.execute(
+                "SELECT 1 FROM events WHERE task_id = ? AND event_type = ? LIMIT 1",
+                (task_id, EVENTO_IMPLEMENTACAO),
             ).fetchone()
             is not None
         )
