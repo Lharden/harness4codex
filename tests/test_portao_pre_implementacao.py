@@ -148,6 +148,16 @@ def test_AC6_review_cobra_em_toda_fase(tmp_path, nome, fase):
     assert _bloqueia(tmp_path)
 
 
+def test_AC11_task_ausente_no_banco_cobra(tmp_path):
+    """Falha fechada: a projecao aponta para uma task que o banco nao tem."""
+    store, _ = _task_em(tmp_path, "L2-architecture", "discuss")
+    projecao = store.load()
+    projecao["task_id"] = "task-que-o-banco-nao-tem"
+    store.save(projecao)
+
+    assert _bloqueia(tmp_path)
+
+
 def test_AC11_fase_fora_da_pipeline_cobra():
     from harness4codex.state_db import cobra_evidencia_nesta_fase
 
@@ -390,4 +400,5 @@ def test_AC17_stop_de_docs_pede_evidencia_de_docs_e_nao_pytest(tmp_path):
 
     assert data and data["decision"] == "block"
     assert "--type docs" in data["reason"]
-    assert "pytest" not in data["reason"].lower()
+    # O balde impresso e o `tmp_path`, que o proprio pytest chama `pytest-of-*`.
+    assert "pytest" not in data["reason"].replace(str(tmp_path), "<home>").lower()

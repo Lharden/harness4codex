@@ -251,3 +251,42 @@ Decisões:
   inexistente sai 2; com arquivo, grava o sha256 dele.
 - **AC-17.** O Stop de docs na fase final pede `--type docs` e não fala em
   pytest.
+
+## Falsificação (fase tdd)
+
+- **RED antes do conserto** (`bdd740a`): 24 de 43 reprovados, cada um pelo
+  motivo previsto — bloqueio em fase pré-implementação, `passou_pela_implementacao`
+  e `cobra_evidencia_nesta_fase` inexistentes, docs sem tipo próprio. Os
+  controles AC-3 a AC-7 passavam: o código antigo cobrava tudo.
+- **GREEN depois:** 44 de 44 no arquivo novo (AC-11 ganhou o caso "task ausente
+  no banco" na curadoria). Os quatro controles de `test_hook.py` reprovaram
+  exatamente como previsto no diagnóstico e foram reposicionados em `tdd` por
+  `transition` real; nenhum outro teste mudou.
+- **Mutantes** (`mutantes_codex.py` no scratchpad; um por vez, restaura sempre,
+  aborta se a substituição não casa exatamente uma vez): **16 de 16 mortos**.
+
+| Mutante | Reprovou (amostra) |
+|---|---|
+| M0 hook ignora a regra (o defeito original) | AC-1, AC-2 ×3, AC-8, AC-10 censo, AC-12 ×2 |
+| M1 teste nunca cobra | AC-5, AC-6 ×5, `test_zero_collected_tests_do_not_satisfy_stop_gate` |
+| M2 ignora a marca | AC-7 |
+| M3 nunca grava a marca | AC-7, AC-9 ×3 |
+| M4 pipeline sem implementação nunca cobra | AC-6 ×5, AC-10 censo |
+| M5 grava a marca em toda transição | AC-2 ×2, AC-9 ×2, AC-10 censo |
+| M6 fase fora da pipeline libera | AC-11 |
+| M7 docs cobra em toda fase | AC-12 ×2, AC-10 censo, AC-11 |
+| M8 `resolve_gate` não grava a marca | AC-9 (approve-plan) |
+| M9 task ilegível libera | AC-11 (task ausente no banco) |
+| M10 docs sem hash verifica | AC-13 |
+| M11 `record_evidence` só aceita teste | AC-13, AC-14 ×2, AC-15, AC-16 |
+| M12 `complete` só aceita teste | AC-15 |
+| M13 CLI não ancora no relatório | AC-16 ×2 |
+| M14 evidência de outro tipo desverifica | AC-14 |
+| M15 mensagem de docs pede teste | AC-17 |
+
+Metade 1 (não bloqueia antes da implementação): M0, M5, M7. Metade 2 (continua
+bloqueando depois e libera com evidência válida): M1, M2, M3, M4, M6, M8, M9,
+mais os controles AC-3/AC-4 e os quatro de `test_hook.py`.
+
+A skill `codex-harness-workflow` §Evidence and completion passou a dizer onde o
+portão cobra e como registrar evidência de docs.

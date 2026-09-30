@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from collections.abc import Sequence
@@ -21,7 +22,7 @@ from .harness_lite_adapter import (
 from .memory import HarnessMemoryStore, MemoryConsolidator
 from .memory_compression import CompressionError, compress_memory_file
 from .state import HarnessStateStore, list_session_states
-from .state_db import HarnessDatabase, StateTransitionError
+from .state_db import EVIDENCIA_COM_RELATORIO, HarnessDatabase, StateTransitionError
 from .wiki import WikiIndex
 from .workflow import load_workflow
 
@@ -421,8 +422,26 @@ def _cmd_task_transition(args: argparse.Namespace) -> int:
     return 0
 
 
+def _hash_do_relatorio(caminho: str | None) -> str:
+    """sha256 do relatorio que sustenta uma evidencia de docs (D3).
+
+    Os numeros da verificacao de docs sao declarados por quem verificou; o que
+    os torna auditaveis e o relatorio em disco, e o hash amarra a linha de
+    `evidence` ao texto que existia quando ela foi gravada. Um `--output-hash`
+    passado a mao e ignorado para este tipo."""
+    if not caminho:
+        raise StateTransitionError("docs evidence requires --command with the verification report path")
+    alvo = Path(caminho)
+    if not alvo.is_file():
+        raise StateTransitionError(f"verification report not found: {caminho}")
+    return hashlib.sha256(alvo.read_bytes()).hexdigest()
+
+
 def _cmd_evidence_record(args: argparse.Namespace) -> int:
     try:
+        output_hash = args.output_hash
+        if args.type in EVIDENCIA_COM_RELATORIO:
+            output_hash = _hash_do_relatorio(args.evidence_command_text)
         task = HarnessDatabase(args.home).record_evidence(
             args.task,
             evidence_type=args.type,
@@ -430,7 +449,7 @@ def _cmd_evidence_record(args: argparse.Namespace) -> int:
             exit_code=args.exit_code,
             tests_collected=args.tests_collected,
             tests_passed=args.tests_passed,
-            output_hash=args.output_hash,
+            output_hash=output_hash,
         )
     except StateTransitionError as exc:
         print(f"evidence record failed: {exc}")

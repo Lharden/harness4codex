@@ -54,7 +54,16 @@ accepting claims. Missing or duplicate nodes are workflow failures, not implicit
 
 Record fresh evidence bound to the current code revision:
 `harness4codex evidence record --home <home> --task <id> --type test --command <cmd> --exit-code 0 --tests-collected N --tests-passed N --output-hash <sha256>`.
-Zero collected tests never verify a task. Then run
+Zero collected tests never verify a task.
+
+The Stop gate asks for test evidence from the first implementation phase
+(`tdd`, or `systematic-debugging` in bug pipelines) onward; planning phases before
+it are not gated. Docs tasks (`L1-docs`, `L2-docs`) are gated only at their final
+phase and are verified by a report, not a test run: write the verification report
+(claims checked against their sources), then record
+`harness4codex evidence record --home <home> --task <id> --type docs --command <report-path> --exit-code 0 --tests-collected N --tests-passed N`,
+where N counts claims checked and confirmed. The CLI refuses a missing report and
+stores its sha256; test evidence does not verify a docs task. Then run
 `harness4codex task complete --home <home> --task <id> --expect-revision <revision>`.
 Any file mutation invalidates earlier verification.
 
