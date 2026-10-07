@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,29 @@ CODEX_ALIASES = {
 }
 
 KIND_ALIASES = {"api-docs": "docs", "documentation": "docs", "escalated-edit": "bug"}
+
+
+def _mh_pelo_marcador() -> None:
+    """Poe no `sys.path` a raiz que `~/.master-harness/mh-root` declara, se ela existir.
+
+    E o protocolo do ecossistema para achar o `mh` sem depender de ele estar
+    instalado — o mesmo de `spool_mirror._mh()`. Ate 2026-10-07 este modulo so
+    tentava `import mh`, e o Python do sistema (o `python` puro dos hooks) tinha
+    um `master-harness` editavel apontando para um worktree apagado: o Codex lia
+    o vizinho 1.1.0 com a flag em `preferido` e a canonica em 1.2.0.
+
+    Sem marcador, nada muda e o `import mh` de baixo decide, como antes. E o caso
+    do kit S1 do master-harness, que roda este modulo com `-I` e a casa no
+    temporario.
+    """
+    casa = os.environ.get("MASTER_HARNESS_HOME") or os.path.join(os.path.expanduser("~"), ".master-harness")
+    try:
+        with open(os.path.join(casa, "mh-root"), encoding="utf-8") as fh:
+            raiz = fh.readline(4096).strip()
+    except OSError:
+        return
+    if raiz and os.path.isdir(raiz) and raiz not in sys.path:
+        sys.path.insert(0, raiz)
 
 
 def arvore_do_contrato() -> tuple[Path, str]:
@@ -42,6 +67,7 @@ def arvore_do_contrato() -> tuple[Path, str]:
     """
     vizinho = Path(__file__).parent / "_contract"
     try:
+        _mh_pelo_marcador()
         from mh import contrato as _mh_contrato
         from mh import flags as _mh_flags
 
