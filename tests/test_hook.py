@@ -514,3 +514,60 @@ def test_science_evidence_intent_is_added_to_prompt_context(tmp_path):
     context = _decode(output)["hookSpecificOutput"]["additionalContext"]
     assert "science_harness" in context
     assert "read-only" in context
+
+
+def _lite_preview_events(home) -> list[dict]:
+    path = HarnessStateStore(home).events_path
+    if not path.exists():
+        return []
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [record for record in records if record["event"] == "HarnessLitePreview"]
+
+
+def _count_lite_http(monkeypatch) -> list[str]:
+    from harness4codex.harness_lite_adapter import HarnessLiteClient, LiteCallResult
+
+    calls: list[str] = []
+
+    def fake_post(self, path, body):
+        calls.append(path)
+        return LiteCallResult(True, 200, result={"eligible": True, "riskTier": "R2", "runner": "x", "modelAlias": "m"})
+
+    monkeypatch.setattr(HarnessLiteClient, "_post", fake_post)
+    return calls
+
+
+def _lite_prompt(tmp_path) -> dict:
+    # tmp_path nao e repositorio git; o cwd do proprio repo garante o base_revision da previa.
+    from pathlib import Path
+
+    return {
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "Implemente exportacao CSV.",
+        "cwd": str(Path(__file__).resolve().parents[1]),
+    }
+
+
+def test_lite_preview_off_by_default_makes_no_http_call_and_no_event(tmp_path, monkeypatch):
+    # HARNESS_CONTROL_TOKEN presente (como nas variaveis de usuario): so o interruptor decide.
+    monkeypatch.setenv("HARNESS_CONTROL_TOKEN", "lite-token")
+    monkeypatch.delenv("HARNESS4CODEX_LITE_PREVIEW", raising=False)
+    calls = _count_lite_http(monkeypatch)
+
+    output = handle_payload(_lite_prompt(tmp_path), harness_home=tmp_path)
+
+    assert calls == []
+    assert _lite_preview_events(tmp_path) == []
+    assert "HARNESS LITE" not in _decode(output)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_lite_preview_on_with_token_calls_the_plane_as_before(tmp_path, monkeypatch):
+    monkeypatch.setenv("HARNESS_CONTROL_TOKEN", "lite-token")
+    monkeypatch.setenv("HARNESS4CODEX_LITE_PREVIEW", "true")
+    calls = _count_lite_http(monkeypatch)
+
+    output = handle_payload(_lite_prompt(tmp_path), harness_home=tmp_path)
+
+    assert calls == ["/control/v1/routes/preview"]
+    assert [event["payload"]["ok"] for event in _lite_preview_events(tmp_path)] == [True]
+    assert "HARNESS LITE preview (advisory)" in _decode(output)["hookSpecificOutput"]["additionalContext"]

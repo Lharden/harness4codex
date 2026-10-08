@@ -21,7 +21,7 @@ Harness4Codex is a contract-backed Codex workflow supervisor. It combines full-l
 - Vendored Harness4Contract snapshot with machine-readable conformance reports.
 - Deterministic workspace primitives for future Symphony-style issue orchestration.
 - Codex app multitask safety: hook state is isolated by `session_id + cwd`, with atomic owner locks for each scoped state file.
-- Automatic advisory Harness Lite route preview for `C1+` when its control token is configured.
+- Automatic advisory Harness Lite route preview for `C1+`, off by default: it needs `HARNESS4CODEX_LITE_PREVIEW=true` and a configured control token (see below).
 - Explicit opt-in Harness Lite execution with a positive cost budget.
 - Automatic Science Harness evidence intent, routed through the read-only `science_harness` MCP server.
 - `doctor` checks for hook/plugin drift, MCP readiness, Codex Apps, and inherited Obsidian credentials.
@@ -101,6 +101,19 @@ python -m harness4codex lite preview "Implementar CSV" --level C2
 `branch open` reads its approved seed file and emits the locally supported
 `codex fork [SESSION_ID|--last] [PROMPT]` argument vector. Pass `--session` to
 fork an exact Codex session; otherwise the most recent session is used.
+
+The hook's automatic Harness Lite preview is **off by default**. Set
+`HARNESS4CODEX_LITE_PREVIEW=true` (also `1`, `yes`, `on`) to enable it; without
+it `preview_for_prompt` returns before any network call and no
+`HarnessLitePreview` event is logged, even when `HARNESS_CONTROL_TOKEN` is set.
+Keep the token: `hctl` and `lite submit` still use it. Reason: nothing listens on
+`127.0.0.1:8787`, so every hook preview failed (68 events, 0 successes in
+`~/.codex/harness/harness.db`). Decision 1 of
+`master-harness/docs/decisoes-capacidades-orfas.md` (sections 1 and 10) turns the
+preview off until O4 (milestone L-25,
+`master-harness/docs/specs/marco-l25-spec-light.md`) moves delegation into a
+workflow phase outside the hook. The `integration.harness-lite` capability stays
+`required` in the contract. `lite preview` (CLI) is unaffected.
 
 Harness Lite submission is deliberately separate from preview:
 
