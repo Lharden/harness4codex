@@ -18,7 +18,7 @@
       "memory.wiki-vault": ["tests/test_wiki.py::test_wiki_index_returns_cited_sections_and_confidence"],
       "memory.operational-search": ["tests/test_memory.py::test_memory_records_and_searches_history"],
       "conversation.branch-keeper": ["tests/test_branches.py::test_each_branch_approval_resolves_only_its_own_gate"],
-      "safety.command-policy": ["tests/test_command_policy.py::test_destructive_command_in_chain_is_denied"],
+      "safety.command-policy": ["tests/test_command_policy.py::test_destructive_command_in_chain_is_denied", "tests/test_command_policy.py::test_git_global_options_do_not_hide_the_subcommand"],
       "integration.harness-lite": ["tests/test_harness_lite_adapter.py::test_preview_envelope_matches_harness_lite_task_envelope_v1"],
       "integration.science-harness": ["tests/test_science_adapter.py::test_scientific_evidence_prompts_activate_the_read_only_mcp_route"],
       "lifecycle.full-hooks": ["tests/test_packaging.py::test_plugin_registers_full_codex_lifecycle"],
