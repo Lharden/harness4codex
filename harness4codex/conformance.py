@@ -6,46 +6,54 @@ from typing import Any
 from .contract import ContractSnapshot
 
 CAPABILITY_EVIDENCE: dict[str, list[str]] = {
-    "classification.deterministic-suggestion": ["tests/test_classifier.py#test_bug_promotes_debugging_and_tdd"],
+    "classification.deterministic-suggestion": [
+        "tests/test_sondas_de_producao.py#test_user_prompt_grava_nivel_e_pipeline_do_classificador"
+    ],
     "classification.semantic-confirmation": [
-        "tests/test_transactional_state.py#test_semantic_confirmation_records_provenance_and_replaces_pipeline"
+        "tests/test_cli.py#test_classification_confirm_updates_transactional_task"
     ],
-    "classification.human-override": ["tests/test_cli.py#test_classification_confirm_updates_transactional_task"],
-    "state.session-worktree-isolation": ["tests/test_state.py#test_store_for_payload_scopes_by_session_and_cwd"],
+    "classification.human-override": [
+        "tests/test_sondas_de_producao.py#test_classification_confirm_cli_grava_human_override"
+    ],
+    "state.session-worktree-isolation": ["tests/test_hook.py#test_parallel_sessions_do_not_continue_each_other"],
     "state.transactional-fsm": [
-        "tests/test_transactional_state.py#test_fresh_test_evidence_allows_completion_and_file_change_invalidates_it"
+        "tests/test_cli.py#test_task_artifact_evidence_and_completion_commands_drive_fsm",
+        "tests/test_hook.py#test_write_after_verification_invalidates_the_gate",
     ],
-    "state.ttl-signals": ["tests/test_transactional_state.py#test_stale_task_ttl_abandons_pipeline_and_releases_scope"],
-    "workflow.sdd-v3": ["tests/test_packaging.py#test_codex_native_sdd_skill_surface_is_packaged"],
+    "state.ttl-signals": ["tests/test_hook.py#test_session_start_expires_stale_pipeline_before_resuming"],
+    "workflow.sdd-v3": ["tests/test_sondas_de_producao.py#test_user_prompt_manda_carregar_workflow_com_fases_sdd"],
     "workflow.human-gates": [
-        "tests/test_transactional_state.py#test_human_gate_sets_awaiting_gate_and_resolution_advances"
+        "tests/test_hook.py#test_stop_escalates_after_two_automatic_continuations_then_allows_human_gate",
+        "tests/test_cli.py#test_gate_resolve_approve_releases_escalation_and_resets_continuations",
     ],
     "workflow.adversarial-agents": [
-        "tests/test_agent_workflows.py#test_node_census_reconciles_only_complete_unique_results"
+        "tests/test_sondas_de_producao.py#test_user_prompt_manda_carregar_workflow_com_contrato_de_node_result"
     ],
-    "workflow.spec-verification": ["tests/test_packaging.py#test_sdd_templates_are_packaged"],
-    "context.graphify": ["tests/test_graph_context.py#test_graph_context_records_hash_head_query_and_freshness"],
-    "context.skill-router": ["tests/test_classifier.py#test_openai_docs_prompt_uses_the_installed_openai_docs_skill"],
-    "capability.arsenal": ["tests/test_arsenal.py#test_arsenal_validates_vocab_overlap_and_budget"],
-    "memory.wiki-vault": ["tests/test_wiki.py#test_wiki_index_returns_cited_sections_and_confidence"],
-    "memory.operational-search": ["tests/test_memory.py#test_memory_records_and_searches_history"],
-    "conversation.branch-keeper": ["tests/test_branches.py#test_each_branch_approval_resolves_only_its_own_gate"],
-    "safety.command-policy": [
-        "tests/test_command_policy.py#test_destructive_command_in_chain_is_denied",
-        "tests/test_command_policy.py#test_git_global_options_do_not_hide_the_subcommand",
+    "workflow.spec-verification": ["tests/test_sondas_de_producao.py#test_task_complete_recusa_sem_verificacao_fresca"],
+    "context.graphify": ["tests/test_sondas_de_producao.py#test_graph_cli_grava_artefato_de_contexto"],
+    "context.skill-router": [
+        "tests/test_sondas_de_producao.py#test_user_prompt_de_docs_injeta_pipeline_de_documentacao"
     ],
+    "capability.arsenal": ["tests/test_sondas_de_producao.py#test_arsenal_cli_valida_registro_e_sobreposicao"],
+    "memory.wiki-vault": ["tests/test_cli.py#test_memory_compress_and_wiki_cli"],
+    "memory.operational-search": [
+        "tests/test_hook.py#test_session_history_is_recorded_in_the_shared_memory_store",
+        "tests/test_cli.py#test_memory_search_prints_matches",
+    ],
+    "conversation.branch-keeper": ["tests/test_cli.py#test_branch_cli_offer_approve_open_and_list"],
+    "safety.command-policy": ["tests/test_hook.py#test_pre_tool_use_denies_dangerous_git"],
     "integration.harness-lite": [
         "tests/test_harness_lite_adapter.py#test_preview_envelope_matches_harness_lite_task_envelope_v1"
     ],
     "integration.science-harness": [
         "tests/test_science_adapter.py#test_scientific_evidence_prompts_activate_the_read_only_mcp_route"
     ],
-    "lifecycle.full-hooks": ["tests/test_packaging.py#test_plugin_registers_full_codex_lifecycle"],
-    "observability.health-telemetry": [
-        "tests/test_diagnostics.py#test_doctor_fails_when_active_plugin_is_older_than_marketplace_source"
+    "lifecycle.full-hooks": [
+        "tests/test_sondas_de_producao.py#test_hook_por_subprocesso_atende_todo_evento_de_hooks_json"
     ],
+    "observability.health-telemetry": ["tests/test_cli.py#test_doctor_json_prints_machine_readiness"],
     "editorial.drop-constrain-retain": [
-        "tests/test_packaging.py#test_workflow_skill_drives_the_transactional_contract"
+        "tests/test_sondas_de_producao.py#test_user_prompt_manda_carregar_workflow_com_drop_constrain_retain"
     ],
 }
 
