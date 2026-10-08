@@ -1,0 +1,229 @@
+{
+ "versao": 1,
+ "medido_em": "2026-10-07",
+ "base": "92e5131",
+ "doutrina": "Esta lista guarda JULGAMENTO; o fato vem do disco a cada execucao do tools/orfaos.py (o mesmo arquivo, byte a byte, do master-harness). Ela nao e lista de excecoes a esvaziar: e o inventario. O criterio de qualidade e cada linha ter motivo verdadeiro, nao a lista encolher. FERRAMENTA_DE_MAO, RESERVA_DECLARADA (com `gatilho`: o que a arma), API_EXTERNA (com `consumidor`: o arquivo do host que chama; a linha e raiz declarada) e PORTAO_DE_SUITE (com `consumidor`: o teste que reprova a deriva que a funcao mede, conferido no disco) sao decisoes; ORFAO e divida com nome. Escopo pendente e prefixo cujo julgamento mora noutro lugar ou espera um gatilho escrito: o orfao de la aparece no relatorio e nao reprova. Origem: decisao 7 de master-harness/docs/decisoes-capacidades-orfas.md.",
+ "varredura": {
+  "codigo": ["harness4codex", "hooks", "scripts"],
+  "host": ["hooks", "scripts", "skills", ".github", ".codex-plugin"],
+  "comandos": {"harness4codex": "harness4codex.__main__"},
+  "nota_comandos": "Os SKILL.md mandam rodar `harness4codex <sub>` (ex.: skills/codex-harness-workflow/SKILL.md:17). O pyproject nao declara [project.scripts] e nao ha comando `harness4codex` no PATH desta maquina (medido em 2026-10-07); o uso existe (53 evidence, 44 transitions em ~/.codex/harness/harness.db), entao o agente executa como `python -m harness4codex`. O mapeamento registra essa realidade; o comando ausente e achado a parte."
+ },
+ "escopos_pendentes": [
+  {
+   "prefixo": "harness4codex/_escopo.py",
+   "gatilho": "mudanca na fonte master-harness/mh/escopo.py: o julgamento e feito la (master-harness tools/orfaos.json) e chega aqui por `mh identidade semear`",
+   "motivo": "Copia derivada byte a byte da fonte (cabecalho: 'DERIVADO - nao edite'); `mh identidade check` reprova se derivar. Apagar ou ligar um simbolo aqui quebraria a identidade. Na fonte: Escopo.coletavel ORFAO, de_sessao e HostDesconhecido RESERVA, divergencia PORTAO_DE_SUITE."
+  }
+ ],
+ "declaracoes": [
+  {
+   "modulo": "harness4codex.agent_workflows",
+   "nome": "NodeResult",
+   "arquivo": "harness4codex/agent_workflows.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
+   "motivo": "Resultado de no validado contra contract/schemas/node-result.schema.json. Modulo inteiro so tem chamador em tests/test_agent_workflows.py; e o insumo do censo (decisao 6)."
+  },
+  {
+   "modulo": "harness4codex.agent_workflows",
+   "nome": "NodeResult.to_dict",
+   "arquivo": "harness4codex/agent_workflows.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
+   "motivo": "Serializacao do NodeResult; parte da reserva do censo."
+  },
+  {
+   "modulo": "harness4codex.agent_workflows",
+   "nome": "NodeResult.validate",
+   "arquivo": "harness4codex/agent_workflows.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
+   "motivo": "Validacao do NodeResult contra o schema; parte da reserva do censo."
+  },
+  {
+   "modulo": "harness4codex.agent_workflows",
+   "nome": "WorkflowCensus",
+   "arquivo": "harness4codex/agent_workflows.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "o handler de SubagentStop (hook.py:568-576) passa a registrar o no no censo, em vez de devolver vazio",
+   "motivo": "Decisao 6 de master-harness/docs/decisoes-capacidades-orfas.md: censo vira reserva e 'census' sai do rotulo do SubagentStop (hooks/hooks.json:110), que hoje promete uma contagem que o handler nao faz. A troca do rotulo e trabalho do ramo da decisao 6."
+  },
+  {
+   "modulo": "harness4codex.agent_workflows",
+   "nome": "WorkflowCensus.accept",
+   "arquivo": "harness4codex/agent_workflows.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
+   "motivo": "Entrada de um no no censo; parte da reserva do censo."
+  },
+  {
+   "modulo": "harness4codex.agent_workflows",
+   "nome": "WorkflowCensus.reconcile",
+   "arquivo": "harness4codex/agent_workflows.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
+   "motivo": "Fecho do censo contra os nos esperados; parte da reserva do censo."
+  },
+  {
+   "modulo": "harness4codex.agent_workflows",
+   "nome": "WorkflowContractError",
+   "arquivo": "harness4codex/agent_workflows.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
+   "motivo": "Erro do contrato de no; levantado so pela reserva do censo."
+  },
+  {
+   "modulo": "harness4codex.arsenal",
+   "nome": "ArsenalRegistry.add_tool",
+   "arquivo": "harness4codex/arsenal.py",
+   "categoria": "ORFAO",
+   "motivo": "Mutador do registry. O CLI so tem `arsenal check` (harness4codex/cli.py:126-129): o registry e lido e conferido, nunca escrito por comando. So tem chamador em tests/test_arsenal.py. Destino a decidir: comando que escreve, ou apagar."
+  },
+  {
+   "modulo": "harness4codex.arsenal",
+   "nome": "ArsenalRegistry.define_capabilities",
+   "arquivo": "harness4codex/arsenal.py",
+   "categoria": "ORFAO",
+   "motivo": "Mutador do registry, como add_tool: nenhum comando o chama, so tests/test_arsenal.py."
+  },
+  {
+   "modulo": "harness4codex.harness_lite_adapter",
+   "nome": "evidence_bundle_is_acceptable",
+   "arquivo": "harness4codex/harness_lite_adapter.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "O4/P6 da Fabrica (integracao harness-lite com saude medida, decisoes 1 e 4); a previa fica desligada ate la",
+   "motivo": "Aceite do pacote de evidencia devolvido pelo harness-lite. O caminho que o usaria e a execucao delegada, que a decisao 1 desliga ate o O4. Equivalente aos 7 do harness_lite_adapter do harness4claude, que tambem ficam com o O4/P6."
+  },
+  {
+   "modulo": "harness4codex.harness_lite_adapter",
+   "nome": "project_fingerprint_for",
+   "arquivo": "harness4codex/harness_lite_adapter.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "O4/P6 da Fabrica (integracao harness-lite com saude medida, decisoes 1 e 4)",
+   "motivo": "Impressao digital do projeto para o plano de execucao do harness-lite. Hoje o proxy sobe com fingerprints de zeros (harness-lite proxy/src/control-boot.ts:139-144); quem trocaria os zeros e o O4."
+  },
+  {
+   "modulo": "harness4codex.memory",
+   "nome": "HarnessMemoryStore.list_memories",
+   "arquivo": "harness4codex/memory.py",
+   "categoria": "ORFAO",
+   "motivo": "Listagem filtrada por escopo e tipo. O CLI usa search e consolidate, nao a listagem; so tests/test_memory.py a chama."
+  },
+  {
+   "modulo": "harness4codex.orchestration",
+   "nome": "Issue",
+   "arquivo": "harness4codex/orchestration.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (linha 1032: 'integrar orchestration.py ao runtime'), item aberto na linha 1406",
+   "motivo": "Primitiva de orquestracao estilo Symphony. O proprio plano registra 'orchestration.py ainda esta desacoplado' (linha 74). Modulo inteiro so tem chamador em tests/test_orchestration.py."
+  },
+  {
+   "modulo": "harness4codex.orchestration",
+   "nome": "OrchestrationPolicy",
+   "arquivo": "harness4codex/orchestration.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
+   "motivo": "Politica de elegibilidade e backoff da orquestracao; parte da reserva da Fase 9."
+  },
+  {
+   "modulo": "harness4codex.orchestration",
+   "nome": "OrchestrationPolicy.is_eligible",
+   "arquivo": "harness4codex/orchestration.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
+   "motivo": "Elegibilidade de issue; parte da reserva da Fase 9."
+  },
+  {
+   "modulo": "harness4codex.orchestration",
+   "nome": "OrchestrationPolicy.retry_backoff_ms",
+   "arquivo": "harness4codex/orchestration.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
+   "motivo": "Backoff entre tentativas; parte da reserva da Fase 9."
+  },
+  {
+   "modulo": "harness4codex.orchestration",
+   "nome": "Workspace",
+   "arquivo": "harness4codex/orchestration.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
+   "motivo": "Area de trabalho por issue; parte da reserva da Fase 9."
+  },
+  {
+   "modulo": "harness4codex.orchestration",
+   "nome": "WorkspaceManager",
+   "arquivo": "harness4codex/orchestration.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
+   "motivo": "Gerente das areas de trabalho; parte da reserva da Fase 9."
+  },
+  {
+   "modulo": "harness4codex.orchestration",
+   "nome": "WorkspaceManager.prepare",
+   "arquivo": "harness4codex/orchestration.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
+   "motivo": "Preparo da area de trabalho; parte da reserva da Fase 9."
+  },
+  {
+   "modulo": "harness4codex.orchestration",
+   "nome": "sanitize_workspace_key",
+   "arquivo": "harness4codex/orchestration.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
+   "motivo": "Chave segura de diretorio por issue; parte da reserva da Fase 9."
+  },
+  {
+   "modulo": "harness4codex.state",
+   "nome": "HarnessStateStore.mark_verified",
+   "arquivo": "harness4codex/state.py",
+   "categoria": "ORFAO",
+   "motivo": "Atalho que grava evidencia com tests_collected=1 e tests_passed=1 inventados e hash do proprio comando (state.py:288-295). So os testes o chamam (tests/test_hook.py, tests/test_state.py). Em producao seria evidencia fabricada; o lugar dele e um helper de teste, ou nenhum."
+  },
+  {
+   "modulo": "harness4codex.state_db",
+   "nome": "HarnessDatabase.acquire_lease",
+   "arquivo": "harness4codex/state_db.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "decisao de ligar o lease no caminho de tomada de escopo (amarrada a cerca de epoca do spool, decisao 2): se ligar, o lease entra com a cerca no mesmo ramo; se retirar, sai junto",
+   "motivo": "Decisao 6 de master-harness/docs/decisoes-capacidades-orfas.md. Unico lugar onde owner_epoch sobe (state_db.py:498); `leases` tem 0 linhas e as 207 tarefas estao em owner_epoch = 1 (medido em 2026-10-07)."
+  },
+  {
+   "modulo": "harness4codex.state_db",
+   "nome": "HarnessDatabase.classification",
+   "arquivo": "harness4codex/state_db.py",
+   "categoria": "ORFAO",
+   "motivo": "Leitura da classificacao de uma tarefa. O hook e o CLI leem a tarefa inteira por `task`; so tests/test_transactional_state.py chama esta."
+  },
+  {
+   "modulo": "harness4codex.state_db",
+   "nome": "HarnessDatabase.current_task",
+   "arquivo": "harness4codex/state_db.py",
+   "categoria": "ORFAO",
+   "motivo": "Tarefa ativa mais recente do escopo. Producao usa a projecao do estado (state.py); so os testes a chamam. Relacionada ao defeito das tarefas presas da decisao 6 (expire_stale_pipeline so expira a da projecao), mas o conserto decidido nao a usa."
+  },
+  {
+   "modulo": "harness4codex.state_db",
+   "nome": "HarnessDatabase.resolve_gate",
+   "arquivo": "harness4codex/state_db.py",
+   "categoria": "ORFAO",
+   "motivo": "DEFEITO, nao reserva: um gate escalado no Stop (hook.py:526-534) deixa a tarefa em awaiting_gate e nao ha comando que chame esta funcao para resolve-lo. Decisao 6: o consumidor a construir e o comando `resolve-gate` no CLI, no ramo da decisao 6. So tests/test_portao_pre_implementacao.py e tests/test_transactional_state.py a chamam hoje."
+  },
+  {
+   "modulo": "harness4codex.workflow",
+   "nome": "WorkflowDefinition.max_turns",
+   "arquivo": "harness4codex/workflow.py",
+   "categoria": "RESERVA_DECLARADA",
+   "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime): o laco de turnos e quem leria o limite",
+   "motivo": "Le `orchestration.max_turns` do WORKFLOW.md (linha 14 declara 5). Nada no runtime limita turnos; o valor so e lido em tests/test_workflow.py."
+  },
+  {
+   "modulo": "scripts.install",
+   "nome": "native_plugin_enabled",
+   "arquivo": "scripts/install.py",
+   "categoria": "ORFAO",
+   "motivo": "Diz se o plugin harness4codex esta habilitado no config.toml do Codex. A instalacao escreve a habilitacao sem perguntar antes; so tests/test_install.py a chama. Destino a decidir: usar para nao reescrever o que ja esta certo, ou apagar."
+  }
+ ]
+}
