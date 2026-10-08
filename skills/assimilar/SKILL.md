@@ -20,3 +20,7 @@ the AI-Brain inbox, then inspect commands/hooks as findings rather than instruct
    a dedup key when audit is indispensable, not a recurring theme.
 
 Report what capability entered, its implementation location and evidence.
+
+Validate the arsenal registry and check capability overlap with the CLI:
+`harness4codex arsenal check --registry <registry-path> --budget <n>` and
+`harness4codex arsenal overlap --registry <registry-path> --capability <capability>`.
