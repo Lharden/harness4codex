@@ -107,7 +107,7 @@
             "type": "command",
             "command": "python \"${PLUGIN_ROOT}/hooks/codex_harness_hook.py\"",
             "timeout": 10,
-            "statusMessage": "Harness4Codex node census"
+            "statusMessage": "Harness4Codex node end"
           }
         ]
       }

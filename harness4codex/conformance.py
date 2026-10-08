@@ -47,12 +47,34 @@ CAPABILITY_EVIDENCE: dict[str, list[str]] = {
 }
 
 
+def evidence_is_valid(root: Path, records: list[str]) -> bool:
+    """Prova forte: lista nao vazia e cada registro `arquivo#teste` aponta um
+    arquivo de verdade que define `def teste(`. Existencia do caminho sozinha
+    aceitava lista vazia, diretorio e ancora inexistente."""
+    if not records:
+        return False
+    for record in records:
+        path, separator, anchor = record.partition("#")
+        if not separator or not anchor:
+            return False
+        target = root / path
+        if not target.is_file():
+            return False
+        try:
+            text = target.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return False
+        if f"def {anchor}(" not in text:
+            return False
+    return True
+
+
 def build_capability_report(repository: str | Path | None = None) -> dict[str, Any]:
     root = Path(repository or Path(__file__).resolve().parents[1]).resolve()
     snapshot = ContractSnapshot.load()
     evidence: dict[str, list[str]] = {}
     for capability, records in CAPABILITY_EVIDENCE.items():
-        if all((root / record.split("#", 1)[0]).exists() for record in records):
+        if evidence_is_valid(root, records):
             evidence[capability] = records
     report = snapshot.capability_report(evidence)
     report["snapshot_lock_valid"] = snapshot.verify_lock()

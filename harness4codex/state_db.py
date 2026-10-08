@@ -404,62 +404,61 @@ class HarnessDatabase:
             ).fetchone()
         return self.task(str(row["task_id"])) if row else None
 
-    def expire_stale_task(
+    def expire_stale_tasks(
         self,
-        scope_id: str,
+        scope_id: str | None,
         *,
         ttl_seconds: float,
         now: float | None = None,
-        expected_task_id: str | None = None,
-    ) -> dict[str, Any] | None:
-        """Abandon the scoped non-terminal task after its pipeline TTL."""
+    ) -> list[dict[str, Any]]:
+        """Abandona toda task nao terminal vencida pelo TTL, gravando um evento por task.
+
+        `scope_id=None` varre todos os escopos: o indice `one_active_task_per_scope`
+        garante uma task ativa por escopo, entao as tasks presas de sessoes mortas
+        so saem por varredura, nunca pelo hook da sessao viva."""
         current_time = time.time() if now is None else float(now)
         ttl = max(float(ttl_seconds), 0.001)
         placeholders = ",".join("?" for _ in ACTIVE_STATUSES)
-        expired_task_id: str | None = None
+        expired_ids: list[str] = []
         with self._write() as connection:
-            row = connection.execute(
-                f"SELECT * FROM tasks WHERE scope_id = ? AND status IN ({placeholders}) "
-                "ORDER BY started_at DESC LIMIT 1",
-                (scope_id, *ACTIVE_STATUSES),
-            ).fetchone()
-            if row is None:
-                return None
-            if expected_task_id is not None and str(row["task_id"]) != expected_task_id:
-                return None
-            try:
-                started = datetime.fromisoformat(str(row["started_at"]))
-                if started.tzinfo is None:
-                    started = started.replace(tzinfo=timezone.utc)
-                expired = current_time - started.timestamp() > ttl
-            except (TypeError, ValueError, OverflowError):
-                expired = True
-            if not expired:
-                return None
-            expired_task_id = str(row["task_id"])
-            occurred_at = datetime.fromtimestamp(current_time, timezone.utc).isoformat()
-            connection.execute(
-                "UPDATE tasks SET status = 'abandoned', verified = 0, revision = revision + 1, "
-                "updated_at = ? WHERE task_id = ?",
-                (occurred_at, expired_task_id),
-            )
-            connection.execute(
-                "UPDATE gates SET status = 'cancelled', decision = 'ttl-expired', resolved_at = ? "
-                "WHERE task_id = ? AND status = 'pending'",
-                (occurred_at, expired_task_id),
-            )
-            connection.execute(
-                "INSERT INTO events(task_id, scope_id, event_type, payload_json, created_at) "
-                "VALUES (?, ?, 'pipeline-expired', ?, ?)",
-                (
-                    expired_task_id,
-                    scope_id,
-                    json.dumps({"ttl_seconds": ttl}, sort_keys=True),
-                    occurred_at,
-                ),
-            )
-        return self.task(expired_task_id)
+            query = f"SELECT * FROM tasks WHERE status IN ({placeholders})"
+            params: tuple[Any, ...] = tuple(ACTIVE_STATUSES)
+            if scope_id is not None:
+                query += " AND scope_id = ?"
+                params += (scope_id,)
+            for row in connection.execute(query + " ORDER BY started_at", params).fetchall():
+                try:
+                    started = datetime.fromisoformat(str(row["started_at"]))
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    expired = current_time - started.timestamp() > ttl
+                except (TypeError, ValueError, OverflowError):
+                    expired = True
+                if not expired:
+                    continue
+                task_id = str(row["task_id"])
+                occurred_at = datetime.fromtimestamp(current_time, timezone.utc).isoformat()
+                connection.execute(
+                    "UPDATE tasks SET status = 'abandoned', verified = 0, revision = revision + 1, "
+                    "updated_at = ? WHERE task_id = ?",
+                    (occurred_at, task_id),
+                )
+                connection.execute(
+                    "UPDATE gates SET status = 'cancelled', decision = 'ttl-expired', resolved_at = ? "
+                    "WHERE task_id = ? AND status = 'pending'",
+                    (occurred_at, task_id),
+                )
+                connection.execute(
+                    "INSERT INTO events(task_id, scope_id, event_type, payload_json, created_at) "
+                    "VALUES (?, ?, 'pipeline-expired', ?, ?)",
+                    (task_id, row["scope_id"], json.dumps({"ttl_seconds": ttl}, sort_keys=True), occurred_at),
+                )
+                expired_ids.append(task_id)
+        return [self.task(task_id) for task_id in expired_ids]
 
+    # RESERVA DECLARADA (decisao 6 de master-harness/docs/decisoes-capacidades-orfas.md,
+    # secoes 6 e 10; segue a decisao 2): `acquire_lease` nao tem chamador de producao.
+    # Ligar a cerca de epoca exige o lease, e os dois entram juntos ou nenhum.
     def acquire_lease(
         self,
         scope_id: str,
@@ -777,7 +776,7 @@ class HarnessDatabase:
         *,
         expected_revision: int,
     ) -> dict[str, Any]:
-        if decision != "approve":
+        if decision not in {"approve", "reject"}:
             raise StateTransitionError(f"unsupported gate decision: {decision}")
         with self._write() as connection:
             row = self._locked_task(connection, task_id)
@@ -789,25 +788,52 @@ class HarnessDatabase:
             ).fetchone()
             if pending is None:
                 raise StateTransitionError(f"pending gate not found: {gate_type}")
-            pipeline = json.loads(row["pipeline_json"])
-            current_index = int(row["phase_index"])
-            if pipeline[current_index] != gate_type or current_index + 1 >= len(pipeline):
-                raise StateTransitionError(f"gate is not at an advanceable phase: {gate_type}")
-            next_phase = pipeline[current_index + 1]
-            new_revision = int(row["revision"]) + 1
-            connection.execute(
-                "UPDATE gates SET status = 'resolved', decision = ?, resolved_at = ? WHERE id = ?",
-                (decision, utc_now(), pending["id"]),
-            )
-            connection.execute(
-                "UPDATE tasks SET phase_index = ?, status = 'active', revision = ?, updated_at = ? WHERE task_id = ?",
-                (current_index + 1, new_revision, utc_now(), task_id),
-            )
-            connection.execute(
-                "INSERT INTO transitions(task_id, from_phase, to_phase, revision, created_at) VALUES (?, ?, ?, ?, ?)",
-                (task_id, gate_type, next_phase, new_revision, utc_now()),
-            )
-            self._marcar_implementacao(connection, row, gate_type, next_phase)
+            if decision == "reject":
+                # Recusar encerra a task: o gate fecha como `reject` e o escopo e liberado.
+                # Nao passa por `_marcar_implementacao`: recusa nao e avanco.
+                occurred_at = utc_now()
+                connection.execute(
+                    "UPDATE gates SET status = 'resolved', decision = ?, resolved_at = ? WHERE id = ?",
+                    (decision, occurred_at, pending["id"]),
+                )
+                connection.execute(
+                    "UPDATE tasks SET status = 'abandoned', verified = 0, revision = ?, updated_at = ? "
+                    "WHERE task_id = ?",
+                    (int(row["revision"]) + 1, occurred_at, task_id),
+                )
+            elif gate_type == "escalation":
+                # A escalada nasce no Stop, fora do pipeline: aprovar devolve a task a mesma fase.
+                occurred_at = utc_now()
+                connection.execute(
+                    "UPDATE gates SET status = 'resolved', decision = ?, resolved_at = ? WHERE id = ?",
+                    (decision, occurred_at, pending["id"]),
+                )
+                connection.execute(
+                    "UPDATE tasks SET status = 'active', revision = ?, updated_at = ? WHERE task_id = ?",
+                    (int(row["revision"]) + 1, occurred_at, task_id),
+                )
+            else:
+                pipeline = json.loads(row["pipeline_json"])
+                current_index = int(row["phase_index"])
+                if pipeline[current_index] != gate_type or current_index + 1 >= len(pipeline):
+                    raise StateTransitionError(f"gate is not at an advanceable phase: {gate_type}")
+                next_phase = pipeline[current_index + 1]
+                new_revision = int(row["revision"]) + 1
+                connection.execute(
+                    "UPDATE gates SET status = 'resolved', decision = ?, resolved_at = ? WHERE id = ?",
+                    (decision, utc_now(), pending["id"]),
+                )
+                connection.execute(
+                    "UPDATE tasks SET phase_index = ?, status = 'active', revision = ?, "
+                    "updated_at = ? WHERE task_id = ?",
+                    (current_index + 1, new_revision, utc_now(), task_id),
+                )
+                connection.execute(
+                    "INSERT INTO transitions(task_id, from_phase, to_phase, revision, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (task_id, gate_type, next_phase, new_revision, utc_now()),
+                )
+                self._marcar_implementacao(connection, row, gate_type, next_phase)
         return self.task(task_id)
 
     def touch_file(self, task_id: str, path: str) -> dict[str, Any]:
