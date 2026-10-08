@@ -240,6 +240,11 @@ def git_base_revision(workspace_path: str | Path) -> str | None:
     return revision if completed.returncode == 0 and re.fullmatch(r"[0-9a-f]{40}", revision) else None
 
 
+def hook_preview_enabled(env: Mapping[str, str]) -> bool:
+    """Interruptor da prévia automática (hook). Desligado por padrão até o O4 (marco L-25)."""
+    return env.get("HARNESS4CODEX_LITE_PREVIEW", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 def preview_for_prompt(
     *,
     level: str,
@@ -250,13 +255,15 @@ def preview_for_prompt(
 ) -> LiteCallResult | None:
     if not reaches_the_plane(level):
         return None
+    source = os.environ if env is None else env
+    if not hook_preview_enabled(source):
+        return None
     client = HarnessLiteClient.from_env(env)
     if client is None:
         return None
     revision = git_base_revision(workspace_path)
     if revision is None:
         return LiteCallResult(False, 0, code="NOT_GIT_WORKSPACE", message="workspace has no Git revision")
-    source = os.environ if env is None else env
     try:
         preview_budget = float(source.get("HARNESS4CODEX_LITE_PREVIEW_MAX_COST_USD", "0"))
     except ValueError:
