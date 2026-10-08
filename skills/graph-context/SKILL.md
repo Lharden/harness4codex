@@ -14,3 +14,6 @@ If the graph is stale, run `graphify update .` when Graphify is already availabl
 otherwise label structural claims unobserved. If no graph exists, use bounded `rg` and
 file inspection. Absence of Graphify degrades capability but never stalls the pipeline.
 After code changes, update an existing graph and keep `graphify-out/` ignored.
+
+Persist the graph-context artifact with the CLI:
+`harness4codex graph context --repo <repo> --task <task-id> --scope <scope-id> --query "<question>" --output <artifact-path>`.

@@ -1,6 +1,9 @@
 import json
 import re
+import shlex
 from pathlib import Path
+
+import pytest
 
 try:
     import tomllib
@@ -170,3 +173,33 @@ def test_subagent_stop_hook_label_does_not_claim_a_census():
     ]
 
     assert labels and all("census" not in label.lower() for label in labels)
+
+
+def _linhas_de_comando(skill: str) -> list[list[str]]:
+    """Cada trecho `harness4codex ...` da skill, com `<placeholder>` trocado por valor de exemplo."""
+    texto = (ROOT / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+    exemplos = {"n": "3"}
+    comandos = []
+    for trecho in re.findall(r"`(harness4codex [^`]+)`", texto):
+        trocado = re.sub(r"<([^>]+)>", lambda m: exemplos.get(m.group(1), "exemplo"), trecho)
+        comandos.append(shlex.split(trocado)[1:])
+    return comandos
+
+
+def test_skills_nomeiam_comando_de_cli_que_o_parser_aceita():
+    from harness4codex.cli import _build_parser
+
+    parser = _build_parser()
+    esperado = {"graph-context": {"graph"}, "assimilar": {"arsenal"}}
+
+    for skill, grupos in esperado.items():
+        comandos = _linhas_de_comando(skill)
+        assert {c[0] for c in comandos} == grupos, skill
+        for argv in comandos:
+            args = parser.parse_args(argv)
+            assert callable(args.func), (skill, argv)
+    assert {c[1] for c in _linhas_de_comando("assimilar")} == {"check", "overlap"}
+
+    # a metade que reprova: uma linha com flag que o parser nao conhece nao passa
+    with pytest.raises(SystemExit):
+        parser.parse_args(["graph", "context", "--repo", "r", "--task", "t", "--scope", "s", "--query", "q", "--inexistente", "x"])

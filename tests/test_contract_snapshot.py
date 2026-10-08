@@ -26,7 +26,7 @@ def test_vendored_contract_hash_matches_lock():
     contract = ContractSnapshot(VENDORIZADA, "vizinho:teste")
 
     assert contract.verify_lock() is True
-    assert contract.version == "1.1.0"
+    assert contract.version == "1.3.0"
 
 
 def test_a_arvore_carregada_tem_lock_valido():
