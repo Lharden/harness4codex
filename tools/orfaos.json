@@ -204,13 +204,6 @@
    "motivo": "Tarefa ativa mais recente do escopo. Producao usa a projecao do estado (state.py); so os testes a chamam. Relacionada ao defeito das tarefas presas da decisao 6 (expire_stale_pipeline so expira a da projecao), mas o conserto decidido nao a usa."
   },
   {
-   "modulo": "harness4codex.state_db",
-   "nome": "HarnessDatabase.resolve_gate",
-   "arquivo": "harness4codex/state_db.py",
-   "categoria": "ORFAO",
-   "motivo": "DEFEITO, nao reserva: um gate escalado no Stop (hook.py:526-534) deixa a tarefa em awaiting_gate e nao ha comando que chame esta funcao para resolve-lo. Decisao 6: o consumidor a construir e o comando `resolve-gate` no CLI, no ramo da decisao 6. So tests/test_portao_pre_implementacao.py e tests/test_transactional_state.py a chamam hoje."
-  },
-  {
    "modulo": "harness4codex.workflow",
    "nome": "WorkflowDefinition.max_turns",
    "arquivo": "harness4codex/workflow.py",
