@@ -221,9 +221,9 @@ def test_AC9_resolve_gate_recusado_nao_grava_a_marca(tmp_path):
     store, task_id = _task_em(tmp_path, "L2-feature", "approve-plan")
     task = store.database.task(task_id)
 
-    with pytest.raises(StateTransitionError):
-        store.database.resolve_gate(task_id, "approve-plan", "reject", expected_revision=task["revision"])
+    recusada = store.database.resolve_gate(task_id, "approve-plan", "reject", expected_revision=task["revision"])
 
+    assert recusada["status"] == "abandoned"
     assert _marcada(store, task_id) is False
 
 

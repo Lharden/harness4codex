@@ -21,7 +21,7 @@ from .harness_lite_adapter import (
 )
 from .memory import HarnessMemoryStore, MemoryConsolidator
 from .memory_compression import CompressionError, compress_memory_file
-from .state import HarnessStateStore, list_session_states
+from .state import DEFAULT_PIPELINE_TTL_HOURS, HarnessStateStore, list_session_states
 from .state_db import EVIDENCIA_COM_RELATORIO, HarnessDatabase, StateTransitionError
 from .wiki import WikiIndex
 from .workflow import load_workflow
@@ -167,6 +167,23 @@ def _build_parser() -> argparse.ArgumentParser:
     task_complete.add_argument("--task", required=True)
     task_complete.add_argument("--expect-revision", type=int, required=True)
     task_complete.set_defaults(func=_cmd_task_complete)
+
+    task_expire = task_sub.add_parser(
+        "expire-stale", help="Abandon every overdue active task in every scope, recording each one."
+    )
+    task_expire.add_argument("--home", type=Path, required=True)
+    task_expire.add_argument("--ttl-hours", type=float, default=DEFAULT_PIPELINE_TTL_HOURS)
+    task_expire.set_defaults(func=_cmd_task_expire_stale)
+
+    gate = subparsers.add_parser("gate", help="Resolve a pending human gate.")
+    gate_sub = gate.add_subparsers(dest="gate_command", required=True)
+    gate_resolve = gate_sub.add_parser("resolve", help="Approve or reject the pending gate of a task.")
+    gate_resolve.add_argument("--home", type=Path, required=True)
+    gate_resolve.add_argument("--task", required=True)
+    gate_resolve.add_argument("--gate", required=True)
+    gate_resolve.add_argument("--decision", choices=("approve", "reject"), required=True)
+    gate_resolve.add_argument("--expect-revision", type=int, required=True)
+    gate_resolve.set_defaults(func=_cmd_gate_resolve)
 
     artifact = subparsers.add_parser("artifact", help="Record a phase artifact.")
     artifact_sub = artifact.add_subparsers(dest="artifact_command", required=True)
@@ -422,6 +439,30 @@ def _cmd_task_transition(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_task_expire_stale(args: argparse.Namespace) -> int:
+    if args.ttl_hours <= 0:
+        print("task expire-stale failed: --ttl-hours must be positive")
+        return 2
+    expired = HarnessDatabase(args.home).expire_stale_tasks(None, ttl_seconds=args.ttl_hours * 3600)
+    for task in expired:
+        _sync_task_projection(args.home, task)
+    print(json.dumps({"expired": [task["task_id"] for task in expired]}, sort_keys=True))
+    return 0
+
+
+def _cmd_gate_resolve(args: argparse.Namespace) -> int:
+    try:
+        task = HarnessDatabase(args.home).resolve_gate(
+            args.task, args.gate, args.decision, expected_revision=args.expect_revision
+        )
+    except StateTransitionError as exc:
+        print(f"gate resolve failed: {exc}")
+        return 2
+    _sync_task_projection(args.home, task, reset_continuations=args.gate == "escalation")
+    print(json.dumps({"gate": args.gate, "decision": args.decision, "task": task}, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _hash_do_relatorio(caminho: str | None) -> str:
     """sha256 do relatorio que sustenta uma evidencia de docs (D3).
 
@@ -476,6 +517,7 @@ def _sync_task_projection(
     *,
     classification_source: str | None = None,
     confidence: float | None = None,
+    reset_continuations: bool = False,
 ) -> None:
     candidates = [home / "state.json"]
     sessions = home / "sessions"
@@ -504,6 +546,8 @@ def _sync_task_projection(
                 "verified": task["verified"],
             }
         )
+        if reset_continuations:
+            projection["stop_continuations"] = 0
         if classification_source:
             classification = projection.setdefault("classification", {})
             classification.update(

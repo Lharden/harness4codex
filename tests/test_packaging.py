@@ -156,3 +156,17 @@ def test_release_version_is_synchronized():
         project = tomllib.load(handle)
 
     assert manifest["version"] == project["project"]["version"] == __version__ == "1.1.0"
+
+
+def test_subagent_stop_hook_label_does_not_claim_a_census():
+    import json
+    from pathlib import Path
+
+    hooks = json.loads((Path(__file__).resolve().parents[1] / "hooks" / "hooks.json").read_text(encoding="utf-8"))
+    labels = [
+        hook["statusMessage"]
+        for entry in hooks["hooks"]["SubagentStop"]
+        for hook in entry["hooks"]
+    ]
+
+    assert labels and all("census" not in label.lower() for label in labels)

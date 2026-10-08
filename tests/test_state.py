@@ -4,7 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from harness4codex.classifier import Classification
-from harness4codex.state import HarnessStateStore, store_for_payload
+from harness4codex.state import HarnessStateStore, default_state, store_for_payload
 from harness4codex.state_db import HarnessDatabase
 
 
@@ -165,3 +165,16 @@ def test_legacy_mark_verified_and_file_touch_update_database_freshness(tmp_path)
     state = store.record_file("app.py")
     assert state["verified"] is False
     assert HarnessDatabase(tmp_path).task(state["task_id"])["verified"] is False
+
+
+def test_expire_stale_pipeline_expires_overdue_task_even_when_projection_is_idle(tmp_path):
+    store = HarnessStateStore(tmp_path, scope="scope-x")
+    store.start_task(Classification("C2", "feature", ["codex-spec-light"], [], False), "implemente csv")
+    task_id = store.load()["task_id"]
+    store.save(default_state())
+
+    expired = store.expire_stale_pipeline(ttl_seconds=1, now=time.time() + 60)
+
+    assert expired == task_id
+    assert store.database.task(task_id)["status"] == "abandoned"
+    assert store.database.current_task("scope-x") is None

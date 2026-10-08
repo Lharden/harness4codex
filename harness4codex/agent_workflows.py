@@ -31,6 +31,10 @@ class NodeResult:
         return asdict(self)
 
 
+# RESERVA DECLARADA (decisao 6 de master-harness/docs/decisoes-capacidades-orfas.md,
+# secoes 6 e 10): `WorkflowCensus` nao tem chamador de producao. O SubagentStop
+# (`hook._handle_subagent`) so registra o evento; nao reconcilia nodes. Fica como
+# reserva ate um consumidor nomeado existir.
 class WorkflowCensus:
     def __init__(self, workflow_id: str, nodes: dict[str, dict[str, Any]]):
         if not workflow_id or not nodes:

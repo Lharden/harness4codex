@@ -1,3 +1,5 @@
+import json
+
 from harness4codex.classifier import Classification
 from harness4codex.cli import run
 from harness4codex.memory import HarnessMemoryStore
@@ -334,3 +336,94 @@ def test_branch_cli_offer_approve_open_and_list(tmp_path, capsys):
     output = capsys.readouterr().out
     assert '"status": "open"' in output
     assert '"codex"' in output and '"fork"' in output
+
+
+def _escalated_task(home):
+    store = HarnessStateStore(home)
+    store.start_task(Classification("C2", "feature", ["codex-spec-light"], [], False), "implemente csv")
+    store.increment_stop_continuations()
+    store.increment_stop_continuations()
+    store.set_pending_gate("escalation")
+    return store, store.load()
+
+
+def _gate_resolve(home, state, decision):
+    return run(
+        [
+            "gate",
+            "resolve",
+            "--home",
+            str(home),
+            "--task",
+            state["task_id"],
+            "--gate",
+            "escalation",
+            "--decision",
+            decision,
+            "--expect-revision",
+            str(state["revision"]),
+        ]
+    )
+
+
+def test_gate_resolve_approve_releases_escalation_and_resets_continuations(tmp_path, capsys):
+    store, state = _escalated_task(tmp_path)
+    assert state["status"] == "awaiting_gate"
+
+    assert _gate_resolve(tmp_path, state, "approve") == 0
+
+    projected = store.load()
+    assert projected["status"] == "active"
+    assert projected["pending_gate"] is None
+    assert projected["stop_continuations"] == 0
+    assert HarnessDatabase(tmp_path).task(state["task_id"])["status"] == "active"
+    assert "approve" in capsys.readouterr().out
+
+
+def test_gate_resolve_reject_abandons_task_and_frees_projection(tmp_path, capsys):
+    store, state = _escalated_task(tmp_path)
+
+    assert _gate_resolve(tmp_path, state, "reject") == 0
+
+    assert HarnessDatabase(tmp_path).task(state["task_id"])["status"] == "abandoned"
+    assert store.load()["status"] == "abandoned"
+    assert store.load()["pending_gate"] is None
+
+
+def test_gate_resolve_fails_on_stale_revision_without_touching_state(tmp_path, capsys):
+    _, state = _escalated_task(tmp_path)
+    state["revision"] -= 1
+
+    assert _gate_resolve(tmp_path, state, "approve") == 2
+
+    assert HarnessDatabase(tmp_path).task(state["task_id"])["status"] == "awaiting_gate"
+    assert "gate resolve failed" in capsys.readouterr().out
+
+
+def test_task_expire_stale_sweeps_every_scope_and_syncs_projections(tmp_path, capsys):
+    stores = [
+        store_for_payload({"session_id": name, "cwd": str(tmp_path)}, tmp_path) for name in ("sess-a", "sess-b")
+    ]
+    ids = []
+    for store in stores:
+        store.start_task(Classification("C2", "feature", ["codex-spec-light"], [], False), "implemente csv")
+        ids.append(store.load()["task_id"])
+    db = HarnessDatabase(tmp_path)
+    with db._write() as connection:
+        connection.execute("UPDATE tasks SET started_at = '2020-01-01T00:00:00+00:00'")
+
+    assert run(["task", "expire-stale", "--home", str(tmp_path), "--ttl-hours", "24"]) == 0
+
+    assert set(json.loads(capsys.readouterr().out)["expired"]) == set(ids)
+    assert all(db.task(task_id)["status"] == "abandoned" for task_id in ids)
+    assert all(store.load()["status"] == "abandoned" for store in stores)
+
+
+def test_task_expire_stale_keeps_recent_tasks(tmp_path, capsys):
+    store = HarnessStateStore(tmp_path)
+    store.start_task(Classification("C2", "feature", ["codex-spec-light"], [], False), "implemente csv")
+    task_id = store.load()["task_id"]
+
+    assert run(["task", "expire-stale", "--home", str(tmp_path)]) == 0
+
+    assert HarnessDatabase(tmp_path).task(task_id)["status"] == "active"

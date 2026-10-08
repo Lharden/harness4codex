@@ -171,7 +171,7 @@ class HarnessStateStore:
         ttl_seconds: float | None = None,
         now: float | None = None,
     ) -> str | None:
-        """Expire a scoped pipeline before lifecycle hooks resume or continue it."""
+        """Expire every overdue active task of the scope before lifecycle hooks resume or continue it."""
         if ttl_seconds is None:
             configured = os.environ.get("HARNESS4CODEX_PIPELINE_TTL_H")
             try:
@@ -183,21 +183,17 @@ class HarnessStateStore:
             ttl_seconds = hours * 3600
         with self._lock():
             state = self._read_unlocked()
-            if state.get("status") not in {"active", "verified", "awaiting_gate"} or not state.get("pipeline"):
+            expired = self.database.expire_stale_tasks(self.scope or "legacy", ttl_seconds=ttl_seconds, now=now)
+            if not expired:
                 return None
-            expired = self.database.expire_stale_task(
-                self.scope or "legacy",
-                ttl_seconds=ttl_seconds,
-                now=now,
-                expected_task_id=str(state.get("task_id") or ""),
-            )
-            if expired is None:
-                return None
-            idle = default_state()
-            idle["last_expired_task"] = expired["task_id"]
-            idle["expiry_reason"] = f"pipeline_ttl_{float(ttl_seconds):g}s"
-            self._write_unlocked(idle)
-            return str(expired["task_id"])
+            expired_ids = [str(task["task_id"]) for task in expired]
+            projected = str(state.get("task_id") or "")
+            if projected in expired_ids:
+                idle = default_state()
+                idle["last_expired_task"] = projected
+                idle["expiry_reason"] = f"pipeline_ttl_{float(ttl_seconds):g}s"
+                self._write_unlocked(idle)
+        return projected if projected in expired_ids else expired_ids[-1]
 
     def start_task(self, classification: Classification, prompt: str) -> dict:
         with self._lock():

@@ -267,18 +267,21 @@ def test_active_lease_cannot_be_stolen_by_another_owner(tmp_path):
         db.acquire_lease("scope-a", "owner-b", ttl_seconds=10, now=105)
 
 
+def _expirar(db, scope, **kwargs):
+    return db.expire_stale_tasks(scope, **kwargs)
+
+
 def test_stale_task_ttl_abandons_pipeline_and_releases_scope(tmp_path):
     db = HarnessDatabase(tmp_path)
     task = _start(db)
     started = datetime.fromisoformat(task["started_at"]).timestamp()
 
-    assert db.expire_stale_task("scope-a", ttl_seconds=3600, now=started + 3599) is None
+    assert _expirar(db, "scope-a", ttl_seconds=3600, now=started + 3599) == []
 
-    expired = db.expire_stale_task("scope-a", ttl_seconds=3600, now=started + 3601)
+    expired = _expirar(db, "scope-a", ttl_seconds=3600, now=started + 3601)
 
-    assert expired is not None
-    assert expired["task_id"] == task["task_id"]
-    assert expired["status"] == "abandoned"
+    assert [t["task_id"] for t in expired] == [task["task_id"]]
+    assert expired[0]["status"] == "abandoned"
     assert db.current_task("scope-a") is None
 
 
@@ -287,25 +290,101 @@ def test_stale_task_ttl_cancels_a_pending_human_gate(tmp_path):
     task = db.open_gate(_start(db)["task_id"], "escalation")
     started = datetime.fromisoformat(task["started_at"]).timestamp()
 
-    expired = db.expire_stale_task("scope-a", ttl_seconds=1, now=started + 2)
+    expired = _expirar(db, "scope-a", ttl_seconds=1, now=started + 2)
 
-    assert expired is not None
-    assert expired["status"] == "abandoned"
-    assert expired["pending_gate"] is None
+    assert [t["status"] for t in expired] == ["abandoned"]
+    assert expired[0]["pending_gate"] is None
 
 
-def test_ttl_compare_and_set_does_not_expire_a_replacement_task(tmp_path):
+def test_ttl_does_not_expire_a_fresh_replacement_task(tmp_path):
     db = HarnessDatabase(tmp_path)
-    old = _start(db)
+    _start(db)
     replacement = _start(db)
     started = datetime.fromisoformat(replacement["started_at"]).timestamp()
 
-    expired = db.expire_stale_task(
-        "scope-a",
-        ttl_seconds=1,
-        now=started + 2,
-        expected_task_id=old["task_id"],
-    )
+    expired = _expirar(db, "scope-a", ttl_seconds=3600, now=started + 60)
 
-    assert expired is None
+    assert expired == []
     assert db.current_task("scope-a")["task_id"] == replacement["task_id"]
+
+
+def test_expiry_records_each_expired_task_as_event(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    task = _start(db)
+    started = datetime.fromisoformat(task["started_at"]).timestamp()
+
+    _expirar(db, "scope-a", ttl_seconds=1, now=started + 2)
+
+    with db._connect() as connection:
+        events = connection.execute(
+            "SELECT task_id, scope_id FROM events WHERE event_type = 'pipeline-expired'"
+        ).fetchall()
+    assert [(row["task_id"], row["scope_id"]) for row in events] == [(task["task_id"], "scope-a")]
+
+
+def test_expiry_without_scope_sweeps_every_scope_and_records_each(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    a = _start(db, scope="scope-a")
+    b = _start(db, scope="scope-b")
+    started = datetime.fromisoformat(b["started_at"]).timestamp()
+
+    expired = db.expire_stale_tasks(None, ttl_seconds=1, now=started + 2)
+
+    assert {t["task_id"] for t in expired} == {a["task_id"], b["task_id"]}
+    assert db.current_task("scope-a") is None
+    assert db.current_task("scope-b") is None
+    with db._connect() as connection:
+        recorded = {
+            row["task_id"]
+            for row in connection.execute("SELECT task_id FROM events WHERE event_type = 'pipeline-expired'")
+        }
+    assert recorded == {a["task_id"], b["task_id"]}
+
+
+def test_expiry_with_scope_leaves_other_scopes_alone(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    _start(db, scope="scope-a")
+    other = _start(db, scope="scope-b")
+    started = datetime.fromisoformat(other["started_at"]).timestamp()
+
+    expired = db.expire_stale_tasks("scope-a", ttl_seconds=1, now=started + 2)
+
+    assert len(expired) == 1
+    assert db.task(other["task_id"])["status"] == "active"
+
+
+def test_escalation_gate_approval_returns_the_task_to_active_in_the_same_phase(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    task = db.open_gate(_start(db)["task_id"], "escalation")
+    phase = task["phase"]
+
+    resolved = db.resolve_gate(task["task_id"], "escalation", "approve", expected_revision=task["revision"])
+
+    assert resolved["status"] == "active"
+    assert resolved["pending_gate"] is None
+    assert resolved["phase"] == phase
+
+
+def test_gate_rejection_abandons_the_task_and_closes_the_gate(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    task = db.open_gate(_start(db)["task_id"], "escalation")
+
+    rejected = db.resolve_gate(task["task_id"], "escalation", "reject", expected_revision=task["revision"])
+
+    assert rejected["status"] == "abandoned"
+    assert rejected["pending_gate"] is None
+    assert db.current_task("scope-a") is None
+    with db._connect() as connection:
+        gate = connection.execute("SELECT status, decision FROM gates WHERE task_id = ?", (task["task_id"],)).fetchone()
+    assert (gate["status"], gate["decision"]) == ("resolved", "reject")
+
+
+def test_gate_resolution_rejects_unknown_decision_and_stale_revision(tmp_path):
+    db = HarnessDatabase(tmp_path)
+    task = db.open_gate(_start(db)["task_id"], "escalation")
+
+    with pytest.raises(StateTransitionError):
+        db.resolve_gate(task["task_id"], "escalation", "maybe", expected_revision=task["revision"])
+    with pytest.raises(StateTransitionError):
+        db.resolve_gate(task["task_id"], "escalation", "reject", expected_revision=task["revision"] - 1)
+    assert db.task(task["task_id"])["status"] == "awaiting_gate"
