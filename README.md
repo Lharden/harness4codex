@@ -63,6 +63,17 @@ python hooks/codex_harness_hook.py
 
 For the hook script, Codex normally sends JSON on stdin. Unit tests cover the supported event payloads directly.
 
+### Orphan guard
+
+`tools/orfaos.py` measures every public function, class and method with no path from a production root (the files
+the host executes: `hooks/hooks.json`, `scripts/install.*`, the `SKILL.md` commands). `tools/orfaos.json` holds the
+judgment for each one (`ORFAO`, `RESERVA_DECLARADA` with its trigger, and the other categories in its `doutrina`).
+`tests/test_orfaos.py` fails on any undeclared orphan. The scanner file is shared byte for byte with master-harness.
+
+```powershell
+python tools/orfaos.py --report
+```
+
 ## Workflow Policy
 
 Add a `WORKFLOW.md` at a repo root to give Codex versioned local policy:
