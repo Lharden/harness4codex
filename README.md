@@ -63,6 +63,13 @@ python hooks/codex_harness_hook.py
 
 For the hook script, Codex normally sends JSON on stdin. Unit tests cover the supported event payloads directly.
 
+### Canonical probe changes
+
+Before merging any change that touches a test of a node in `harness4codex/_contract/behavioral-probes.json`,
+`hooks/codex_harness_hook.py`, or a production file edited by master-harness `mh/sabotagens.py`, run
+`mh paridade --dinamica --host codex --ref <branch>` and merge only on exit 0 (see "Mudança de sonda" in
+master-harness `contract/README.md`).
+
 ### Orphan guard
 
 `tools/orfaos.py` measures every public function, class and method with no path from a production root (the files
