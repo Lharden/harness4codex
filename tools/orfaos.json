@@ -23,7 +23,7 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
-   "motivo": "Resultado de no validado contra contract/schemas/node-result.schema.json. Modulo inteiro so tem chamador em tests/test_agent_workflows.py; e o insumo do censo (decisao 6)."
+   "motivo": "Retorno de no no formato da skill codex-harness-workflow (SKILL.md, secao Delegated work), onde o contrato do NodeResult mora (L-64 do master-harness). Nao ha schema de no no contrato desde 1.4.0 (L-70): o que existia ate 1.3.0 tinha outros campos e nenhum consumidor. Modulo inteiro so tem chamador em tests/test_agent_workflows.py; e o insumo do censo (decisao 6)."
   },
   {
    "modulo": "harness4codex.agent_workflows",
@@ -39,7 +39,7 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
-   "motivo": "Validacao do NodeResult contra o schema; parte da reserva do censo."
+   "motivo": "Validacao propria do NodeResult (node_id nao vazio, status no enum da skill, no complete sem pergunta aberta); nao le schema nenhum. Parte da reserva do censo."
   },
   {
    "modulo": "harness4codex.agent_workflows",

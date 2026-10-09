@@ -26,7 +26,10 @@ def test_vendored_contract_hash_matches_lock():
     contract = ContractSnapshot(VENDORIZADA, "vizinho:teste")
 
     assert contract.verify_lock() is True
-    assert contract.version == "1.3.0"
+    assert contract.version == "1.4.0"
+    # L-70 do master-harness: o schema de no saiu do contrato em 1.4.0, sem consumidor.
+    assert not (VENDORIZADA / "schemas" / "node-result.schema.json").exists()
+    assert "schemas/node-result.schema.json" not in contract.lock["files"]
 
 
 def test_a_arvore_carregada_tem_lock_valido():

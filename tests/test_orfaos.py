@@ -11,7 +11,11 @@ mandam rodar `harness4codex <sub>` (mapeado para `python -m harness4codex` em `v
 
 from __future__ import annotations
 
+import dataclasses
+import importlib
 import importlib.util
+import json
+import re
 import shutil
 import subprocess
 import sys
@@ -107,3 +111,69 @@ class TestFalsificacao:
         p = subprocess.run([sys.executable, str(SCANNER), "--raiz", str(copia), "--report"],
                            capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
         assert p.returncode == 1 and "plantada_sem_chamador" in p.stdout
+
+
+_SCHEMA_CITADO = re.compile(r"contract/schemas/([\w.-]+\.schema\.json)")
+VENDORIZADA = ROOT / "harness4codex" / "_contract"
+
+
+def _alegacoes_de_schema_falsas(declaracoes, contrato: Path) -> list[str]:
+    """Motivo do inventario que cita um schema do contrato tem de apontar para um schema que existe, e, se o simbolo e
+    uma dataclass, com o `required` igual aos campos dela. Origem: ate 2026-10-09 o motivo do `NodeResult` dizia
+    "validado contra contract/schemas/node-result.schema.json", e nenhum campo batia (L-70 do master-harness)."""
+    falhas = []
+    for d in declaracoes:
+        texto = " ".join(str(d.get(chave, "")) for chave in ("motivo", "gatilho"))
+        for nome in _SCHEMA_CITADO.findall(texto):
+            schema = contrato / "schemas" / nome
+            if not schema.is_file():
+                falhas.append(f"{d['modulo']}.{d['nome']}: cita {nome}, ausente de {contrato}")
+                continue
+            alvo = getattr(importlib.import_module(d["modulo"]), d["nome"].split(".")[0])
+            if dataclasses.is_dataclass(alvo):
+                campos = {f.name for f in dataclasses.fields(alvo)}
+                exigidos = set(json.loads(schema.read_text(encoding="utf-8")).get("required", []))
+                if campos != exigidos:
+                    falhas.append(f"{d['modulo']}.{d['nome']}: campos {sorted(campos)} != required de {nome} "
+                                  f"{sorted(exigidos)}")
+    return falhas
+
+
+class TestMotivoQueCitaSchema:
+    """O inventario guarda julgamento; um julgamento que cita o contrato tem de bater com o contrato."""
+
+    def test_inventario_real_nao_alega_schema_falso(self, orf):
+        assert _alegacoes_de_schema_falsas(orf.ler_inventario(ROOT)["declaracoes"], VENDORIZADA) == []
+
+    def test_node_result_nao_cita_schema_do_contrato(self, orf):
+        """L-70: o formato do NodeResult mora na skill (L-64); o contrato 1.4.0 nao tem schema de no."""
+        linhas = [d for d in orf.ler_inventario(ROOT)["declaracoes"] if d["nome"].startswith("NodeResult")]
+        assert linhas and not any(_SCHEMA_CITADO.search(d["motivo"]) for d in linhas)
+        assert not (VENDORIZADA / "schemas" / "node-result.schema.json").exists()
+
+    # As duas metades: a guarda reprova o motivo antigo sobre a arvore 1.3.0 e o schema ausente, e passa quando o
+    # schema cita bate com a dataclass (senao seria a guarda que reprova sempre).
+    MOTIVO_ANTIGO = {"modulo": "harness4codex.agent_workflows", "nome": "NodeResult",
+                     "motivo": "Resultado de no validado contra contract/schemas/node-result.schema.json."}
+
+    @staticmethod
+    def _contrato_com(tmp_path: Path, required: list[str]) -> Path:
+        (tmp_path / "schemas").mkdir()
+        (tmp_path / "schemas" / "node-result.schema.json").write_text(json.dumps({"required": required}),
+                                                                      encoding="utf-8")
+        return tmp_path
+
+    def test_motivo_antigo_sobre_schema_1_3_reprova(self, tmp_path):
+        antigo = ["run_id", "role", "status", "findings", "evidence_refs", "coverage", "errors"]
+        falhas = _alegacoes_de_schema_falsas([self.MOTIVO_ANTIGO], self._contrato_com(tmp_path, antigo))
+        assert len(falhas) == 1 and "!= required" in falhas[0]
+
+    def test_motivo_com_schema_ausente_reprova(self, tmp_path):
+        falhas = _alegacoes_de_schema_falsas([self.MOTIVO_ANTIGO], tmp_path)
+        assert len(falhas) == 1 and "ausente" in falhas[0]
+
+    def test_motivo_com_schema_que_bate_passa(self, tmp_path):
+        from harness4codex.agent_workflows import NodeResult
+
+        campos = [f.name for f in dataclasses.fields(NodeResult)]
+        assert _alegacoes_de_schema_falsas([self.MOTIVO_ANTIGO], self._contrato_com(tmp_path, campos)) == []
