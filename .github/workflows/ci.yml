@@ -22,6 +22,9 @@ jobs:
         python: ["3.10", "3.11", "3.14"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          # tests/test_hook.py le o hook antigo por SHA (metade de falsificacao)
+          fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}

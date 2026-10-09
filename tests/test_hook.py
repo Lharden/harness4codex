@@ -571,3 +571,74 @@ def test_lite_preview_on_with_token_calls_the_plane_as_before(tmp_path, monkeypa
     assert calls == ["/control/v1/routes/preview"]
     assert [event["payload"]["ok"] for event in _lite_preview_events(tmp_path)] == [True]
     assert "HARNESS LITE preview (advisory)" in _decode(output)["hookSpecificOutput"]["additionalContext"]
+
+
+# SubagentStart sem contrato de no. Ate 1adb380 o hook mandava todo subagente
+# "return role, status, findings, evidence_refs, coverage, and errors", contra o
+# `NodeResult` que `skills/codex-harness-workflow/SKILL.md` exige dos nos do censo
+# (`node_id, status, summary, artifacts, evidence, risks, questions`). A L-64
+# (master-harness `docs/CONTEXT.md`) poe o contrato na skill; o hook chega a todo
+# subagente, no de censo ou nao, e nao tem como saber qual contrato vale para ele.
+# Mesmo conserto do harness4claude em 2026-09-30
+# (`docs/specs/subagent-start-resuming-diagnostico.md`): registrar e nao emitir.
+SUBAGENT_START_OLD_REF = "1adb380"
+AGENT_TYPES = ["worker", "explorer", "default", None]
+
+
+def _subagent_start(handler, home, agent_type) -> str:
+    """Task viva aberta pelo prompt e um SubagentStart, pela funcao de producao passada."""
+    handler({"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."}, harness_home=home)
+    payload = {"hook_event_name": "SubagentStart", "agent_id": "agent-1"}
+    if agent_type is not None:
+        payload["agent_type"] = agent_type
+    return handler(payload, harness_home=home)
+
+
+def _subagent_events(home) -> list[dict]:
+    path = HarnessStateStore(home).events_path
+    records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [record for record in records if record["event"] == "SubagentStart"]
+
+
+@pytest.mark.parametrize("agent_type", AGENT_TYPES)
+def test_subagent_start_registra_e_nao_emite(tmp_path, agent_type):
+    output = _subagent_start(handle_payload, tmp_path, agent_type)
+
+    assert output == ""
+    assert [event["payload"] for event in _subagent_events(tmp_path)] == [
+        {"agent_id": "agent-1", "agent_type": agent_type}
+    ]
+
+
+def _hook_at(ref: str):
+    """Carrega `harness4codex/hook.py` de `ref` como modulo irmao do pacote atual."""
+    import importlib.util
+    import subprocess
+    from pathlib import Path
+
+    repo = Path(__file__).resolve().parents[1]
+    source = subprocess.run(
+        ["git", "show", f"{ref}:harness4codex/hook.py"],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+        check=True,
+    ).stdout
+    spec = importlib.util.spec_from_loader(f"harness4codex._hook_{ref}", loader=None)
+    module = importlib.util.module_from_spec(spec)
+    module.__package__ = "harness4codex"
+    exec(compile(source, f"{ref}:harness4codex/hook.py", "exec"), module.__dict__)
+    return module
+
+
+def test_CONTROLE_hook_antigo_mandava_subagente_seguir_outro_contrato(tmp_path):
+    """Metade de falsificacao: o mesmo cenario, contra o hook fixado por SHA, ve a linha."""
+    old = _hook_at(SUBAGENT_START_OLD_REF)
+
+    output = _subagent_start(old.handle_payload, tmp_path, "worker")
+
+    context = _decode(output)["hookSpecificOutput"]["additionalContext"]
+    assert "node contract" in context
+    assert "evidence_refs" in context

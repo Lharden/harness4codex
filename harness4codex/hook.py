@@ -566,13 +566,11 @@ def _handle_compaction(event: str, store: HarnessStateStore) -> str:
 
 
 def _handle_subagent(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
+    # So registra. O contrato de retorno do no (`NodeResult`) mora na skill
+    # `codex-harness-workflow`, onde o censo e publicado (L-64); este hook chega a
+    # todo subagente e nao sabe qual contrato vale para ele.
     agent_id = payload.get("agent_id") or payload.get("agentId") or payload.get("subagent_id")
     store.log_event(event, {"agent_id": agent_id, "agent_type": payload.get("agent_type")})
-    if event == "SubagentStart":
-        return _context_output(
-            event,
-            "HARNESS4CODEX node contract: return role, status, findings, evidence_refs, coverage, and errors.",
-        )
     return ""
 
 
