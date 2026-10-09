@@ -445,11 +445,44 @@ def test_zero_collected_tests_do_not_satisfy_stop_gate(tmp_path):
     assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
 
 
-def test_stop_escalates_after_two_automatic_continuations_then_allows_human_gate(tmp_path):
-    _feature_no_tdd(tmp_path)
+def _feature_em_tdd_constatado(home) -> None:
+    """Como `_feature_no_tdd`, mas constata cada efeito do hook antes de usa-lo.
 
-    assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
-    assert _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))["decision"] == "block"
+    Usado so pela sonda de escalada: se o hook nao criar a task, ou a task nao
+    chegar ativa a `tdd`, a reprovacao sai daqui, por assercao, e nao de uma
+    guarda da producao chamada mais adiante."""
+    from harness4codex.cli import _sync_task_projection
+
+    handle_payload({"hook_event_name": "UserPromptSubmit", "prompt": "Implemente exportacao CSV."}, harness_home=home)
+    store = HarnessStateStore(home)
+    criado = store.load()
+    assert criado.get("task_id"), f"o hook nao criou task pelo UserPromptSubmit: {criado!r}"
+    assert criado.get("status") == "active", f"task criada pelo hook nao esta ativa: {criado!r}"
+    assert criado.get("kind") == "feature", f"task criada pelo hook nao e feature: {criado!r}"
+    assert criado.get("current_step") == "write-spec-light", f"task nao comecou na primeira fase: {criado!r}"
+
+    task_id = criado["task_id"]
+    task = store.database.record_artifact(task_id, "spec-light", "docs/specs/csv-spec-light.md", None)
+    task = store.database.transition(task_id, "tdd", expected_revision=task["revision"])
+    _sync_task_projection(home, task)
+
+    em_tdd = HarnessStateStore(home).load()
+    assert em_tdd.get("task_id") == task_id, f"a task ativa mudou ao avancar: {em_tdd!r}"
+    assert em_tdd.get("current_step") == "tdd", f"a task nao chegou a tdd: {em_tdd!r}"
+    assert em_tdd.get("status") == "active", f"a task em tdd nao esta ativa: {em_tdd!r}"
+    assert em_tdd.get("pending_gate") is None, f"portao aberto antes do Stop: {em_tdd!r}"
+
+
+def test_stop_escalates_after_two_automatic_continuations_then_allows_human_gate(tmp_path):
+    _feature_em_tdd_constatado(tmp_path)
+
+    for continuacao in (1, 2):
+        saida = handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path)
+        assert saida, f"o Stop {continuacao} nao produziu saida: deveria bloquear a continuacao automatica"
+        assert _decode(saida)["decision"] == "block"
+        intermediario = HarnessStateStore(tmp_path).load()
+        assert intermediario.get("status") == "active", f"Stop {continuacao} tirou a task de ativa: {intermediario!r}"
+        assert intermediario.get("pending_gate") is None, f"Stop {continuacao} abriu portao cedo: {intermediario!r}"
     escalation = _decode(handle_payload({"hook_event_name": "Stop"}, harness_home=tmp_path))
 
     assert escalation["decision"] == "block"
