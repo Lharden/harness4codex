@@ -58,7 +58,7 @@ def falso(tmp_path: Path) -> Path:
 def _rodar(casa: Path, falso: Path) -> dict:
     env = dict(os.environ, MASTER_HARNESS_HOME=str(casa))
     p = subprocess.run([sys.executable, "-c", _BLOQUEIO_DO_MH, str(falso), str(ROOT)],
-                       capture_output=True, text=True, timeout=120, env=env)
+                       capture_output=True, text=True, timeout=120, env=env, stdin=subprocess.DEVNULL)
     assert p.returncode == 0, p.stderr
     return json.loads(p.stdout.strip().splitlines()[-1])
 

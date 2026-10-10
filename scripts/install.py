@@ -230,6 +230,7 @@ def _default_native_runner(command: list[str], codex_home: Path) -> subprocess.C
         text=True,
         check=False,
         env=environment,
+        stdin=subprocess.DEVNULL,
     )
 
 

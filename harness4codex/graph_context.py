@@ -91,6 +91,7 @@ def _git_head(root: Path) -> str | None:
             check=False,
             text=True,
             timeout=3,
+            stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

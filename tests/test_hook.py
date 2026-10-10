@@ -644,6 +644,7 @@ def _hook_at(ref: str):
         encoding="utf-8",
         timeout=60,
         check=True,
+        stdin=subprocess.DEVNULL,
     ).stdout
     spec = importlib.util.spec_from_loader(f"harness4codex._hook_{ref}", loader=None)
     module = importlib.util.module_from_spec(spec)

@@ -233,6 +233,7 @@ def git_base_revision(workspace_path: str | Path) -> str | None:
             capture_output=True,
             text=True,
             timeout=1.0,
+            stdin=subprocess.DEVNULL,
         )
     except (OSError, subprocess.TimeoutExpired):
         return None

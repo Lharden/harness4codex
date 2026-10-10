@@ -110,7 +110,8 @@ class TestFalsificacao:
         alvo.write_text(alvo.read_text(encoding="utf-8") + "\n\ndef plantada_sem_chamador():\n    return 42\n",
                         encoding="utf-8")
         p = subprocess.run([sys.executable, str(SCANNER), "--raiz", str(copia), "--report"],
-                           capture_output=True, text=True, encoding="utf-8", timeout=120, check=False)
+                           capture_output=True, text=True, encoding="utf-8", timeout=120, check=False,
+                           stdin=subprocess.DEVNULL)
         assert p.returncode == 1 and "plantada_sem_chamador" in p.stdout
 
 
