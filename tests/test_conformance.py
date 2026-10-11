@@ -1,9 +1,36 @@
 from pathlib import Path
 
+from harness4codex import conformance
 from harness4codex.conformance import build_capability_report, evidence_is_valid
 from harness4codex.contract import ContractSnapshot
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+# --- Chaves do CAPABILITY_EVIDENCE contra o contrato (F-048 do censo de fatos do master-harness, 2026-10-11) ---
+#
+# As chaves do mapa sao ids de capacidade do contrato, escritas de novo aqui. O relatorio
+# percorre o contrato (`capability_report`), entao capacidade nova sem linha ja aparece. O
+# que ninguem pegava era capacidade que SAIU do contrato e deixou a linha no mapa,
+# ignorada em silencio. O contrato vem do mesmo `ContractSnapshot.load` que o relatorio usa.
+
+
+def chaves_sem_capacidade(mapa: dict) -> list[str]:
+    """Chaves do mapa que nao sao id de capacidade do contrato que o adaptador carrega."""
+    ids = {item["id"] for item in ContractSnapshot.load().capabilities.get("capabilities", [])}
+    return sorted(set(mapa) - ids)
+
+
+def test_toda_chave_do_capability_evidence_e_capacidade_do_contrato():
+    """O portao. Vermelho aqui = evidencia de capacidade que o contrato nao tem mais."""
+    sobrando = chaves_sem_capacidade(conformance.CAPABILITY_EVIDENCE)
+    assert not sobrando, "chaves do CAPABILITY_EVIDENCE fora do contrato:\n  " + "\n  ".join(sobrando)
+
+
+def test_chave_velha_no_capability_evidence_e_pega(monkeypatch):
+    """Falsificacao: a mesma conta reprova uma capacidade que saiu do contrato."""
+    monkeypatch.setitem(conformance.CAPABILITY_EVIDENCE, "capacidade.que-saiu-do-contrato", ["tests/test_cli.py"])
+    assert chaves_sem_capacidade(conformance.CAPABILITY_EVIDENCE) == ["capacidade.que-saiu-do-contrato"]
 
 
 def test_codex_adapter_reports_every_required_contract_capability():
