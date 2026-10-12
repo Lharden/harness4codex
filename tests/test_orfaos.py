@@ -1,8 +1,9 @@
 """Guarda de orfao do harness4codex: simbolo publico (funcao, classe, metodo) sem caminho ate uma raiz de producao.
 
-Decisao 7 de master-harness/docs/decisoes-capacidades-orfas.md. O scanner `tools/orfaos.py` e o mesmo arquivo do
-master-harness, onde os testes do proprio scanner moram (`master-harness/tests/test_orfaos.py`, arvores sinteticas).
-Aqui ficam o guarda sobre este repositorio, a falsificacao nas duas metades e a paridade entre as duas copias.
+Decisao 7 de master-harness/docs/decisoes-capacidades-orfas.md. O scanner `tools/orfaos.py` e uma COPIA GERADA do
+arquivo do master-harness (`mh identidade semear --artefato orfaos`): cabecalho de marca e, abaixo dele, a fonte byte
+a byte. Os testes do proprio scanner moram no master-harness (`master-harness/tests/test_orfaos.py`, arvores
+sinteticas). Aqui ficam o guarda sobre este repositorio, a falsificacao nas duas metades e a conferencia da copia.
 
 As raizes deste repositorio vem do host, nao do pyproject: `hooks/hooks.json` executa
 `hooks/codex_harness_hook.py`, `scripts/install.sh` e `install.ps1` executam `scripts/install.py`, e os `SKILL.md`
@@ -15,6 +16,7 @@ import dataclasses
 import importlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -26,7 +28,10 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 SCANNER = ROOT / "tools" / "orfaos.py"
-FONTE_DO_SCANNER = Path("C:/Users/LHarden2/Documents/projects/master-harness/tools/orfaos.py")
+#: A marca que `mh identidade` grava entre o cabecalho e a copia exata (`mh/identidade.py::MARCA`).
+MARCA_DA_COPIA = "# ---- fim do cabecalho vendorizado; daqui para baixo e copia exata ----\n"
+#: O checkout do master-harness: `MH_RAIZ` ou a pasta irma deste repositorio. Nunca um caminho de usuario escrito aqui.
+RAIZ_DO_MH = Path(os.environ.get("MH_RAIZ") or ROOT.parent / "master-harness")
 
 
 @pytest.fixture(scope="module")
@@ -60,12 +65,33 @@ class TestRepositorioReal:
         assert [e["prefixo"] for e in escopos] == ["harness4codex/_escopo.py"]
         assert "mh/escopo.py" in escopos[0]["gatilho"]
 
-    def test_scanner_e_o_mesmo_do_master_harness(self):
-        """O docstring do scanner afirma que o arquivo e o mesmo nos dois repositorios; isto mede."""
-        if not FONTE_DO_SCANNER.is_file():
-            pytest.skip("master-harness ausente nesta maquina, ou o scanner ainda nao chegou ao main dele")
-        normal = [p.read_bytes().replace(b"\r\n", b"\n") for p in (SCANNER, FONTE_DO_SCANNER)]
-        assert normal[0] == normal[1], "tools/orfaos.py derivou da copia do master-harness"
+    def test_scanner_e_copia_gerada_com_a_marca(self):
+        """O arquivo diz que e derivado e onde a copia exata comeca: sem isso `mh identidade check` nao distingue
+        cabecalho de corpo, e uma edicao a mao neste arquivo passaria por "o scanner do host"."""
+        texto = SCANNER.read_bytes().replace(b"\r\n", b"\n").decode("utf-8")
+        assert texto.startswith("# DERIVADO - nao edite este arquivo.\n")
+        assert texto.count(MARCA_DA_COPIA) == 1
+
+    def test_scanner_nao_derivou_da_fonte_no_master_harness(self, tmp_path):
+        """A copia ainda e a fonte: quem responde e o `mh identidade check`, sobre ESTE checkout (`--raiz`).
+
+        Sem o master-harness na maquina, ou sem um Python que o rode (ele pede 3.11), o teste pula com o motivo; um
+        veredito de divergencia, ou de marca ilegivel, reprova.
+        """
+        if not (RAIZ_DO_MH / "mh" / "cli.py").is_file():
+            pytest.skip(f"master-harness ausente em {RAIZ_DO_MH} (defina MH_RAIZ para apontar o checkout)")
+        r = subprocess.run(
+            [sys.executable, "-m", "mh.cli", "identidade", "check", "--artefato", "orfaos", "--json",
+             "--raiz", f"HX={ROOT}"],
+            cwd=RAIZ_DO_MH, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=False,
+            env={**os.environ, "MASTER_HARNESS_HOME": str(tmp_path)},
+        )
+        try:
+            veredito = json.loads(r.stdout)
+        except ValueError:
+            pytest.skip(f"o mh nao respondeu neste interpretador ({sys.version_info[:2]}): {r.stderr[-300:]}")
+        copia = [c for c in veredito["copias"] if c["host"] == "codex/repo"]
+        assert [c["estado"] for c in copia] == ["identica"], copia
 
 
 class TestFalsificacao:

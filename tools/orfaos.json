@@ -23,7 +23,8 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
-   "motivo": "Retorno de no no formato da skill codex-harness-workflow (SKILL.md, secao Delegated work), onde o contrato do NodeResult mora (L-64 do master-harness). Nao ha schema de no no contrato desde 1.4.0 (L-70): o que existia ate 1.3.0 tinha outros campos e nenhum consumidor. Modulo inteiro so tem chamador em tests/test_agent_workflows.py; e o insumo do censo (decisao 6)."
+   "motivo": "Retorno de no no formato da skill codex-harness-workflow (SKILL.md, secao Delegated work), onde o contrato do NodeResult mora (L-64 do master-harness). Nao ha schema de no no contrato desde 1.4.0 (L-70): o que existia ate 1.3.0 tinha outros campos e nenhum consumidor. Modulo inteiro so tem chamador em tests/test_agent_workflows.py; e o insumo do censo (decisao 6).",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.agent_workflows",
@@ -31,7 +32,8 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
-   "motivo": "Serializacao do NodeResult; parte da reserva do censo."
+   "motivo": "Serializacao do NodeResult; parte da reserva do censo.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.agent_workflows",
@@ -39,7 +41,8 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
-   "motivo": "Validacao propria do NodeResult (node_id nao vazio, status no enum da skill, no complete sem pergunta aberta); nao le schema nenhum. Parte da reserva do censo."
+   "motivo": "Validacao propria do NodeResult (node_id nao vazio, status no enum da skill, no complete sem pergunta aberta); nao le schema nenhum. Parte da reserva do censo.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.agent_workflows",
@@ -47,7 +50,8 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o handler de SubagentStop (hook.py:568-576) passa a registrar o no no censo, em vez de devolver vazio",
-   "motivo": "Decisao 6 de master-harness/docs/decisoes-capacidades-orfas.md: censo vira reserva e 'census' sai do rotulo do SubagentStop (hooks/hooks.json:110), que hoje promete uma contagem que o handler nao faz. A troca do rotulo e trabalho do ramo da decisao 6."
+   "motivo": "Decisao 6 de master-harness/docs/decisoes-capacidades-orfas.md: censo vira reserva e 'census' sai do rotulo do SubagentStop (hooks/hooks.json:110), que hoje promete uma contagem que o handler nao faz. A troca do rotulo e trabalho do ramo da decisao 6.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.agent_workflows",
@@ -55,7 +59,8 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
-   "motivo": "Entrada de um no no censo; parte da reserva do censo."
+   "motivo": "Entrada de um no no censo; parte da reserva do censo.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.agent_workflows",
@@ -63,7 +68,8 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
-   "motivo": "Fecho do censo contra os nos esperados; parte da reserva do censo."
+   "motivo": "Fecho do censo contra os nos esperados; parte da reserva do censo.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.agent_workflows",
@@ -71,7 +77,8 @@
    "arquivo": "harness4codex/agent_workflows.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "o mesmo de WorkflowCensus: SubagentStop passa a contar nos",
-   "motivo": "Erro do contrato de no; levantado so pela reserva do censo."
+   "motivo": "Erro do contrato de no; levantado so pela reserva do censo.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.arsenal",
@@ -93,7 +100,8 @@
    "arquivo": "harness4codex/harness_lite_adapter.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "O4/P6 da Fabrica (integracao harness-lite com saude medida, decisoes 1 e 4); a previa fica desligada ate la",
-   "motivo": "Aceite do pacote de evidencia devolvido pelo harness-lite. O caminho que o usaria e a execucao delegada, que a decisao 1 desliga ate o O4. Equivalente aos 7 do harness_lite_adapter do harness4claude, que tambem ficam com o O4/P6."
+   "motivo": "Aceite do pacote de evidencia devolvido pelo harness-lite. O caminho que o usaria e a execucao delegada, que a decisao 1 desliga ate o O4. Equivalente aos 7 do harness_lite_adapter do harness4claude, que tambem ficam com o O4/P6.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.harness_lite_adapter",
@@ -101,7 +109,8 @@
    "arquivo": "harness4codex/harness_lite_adapter.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "O4/P6 da Fabrica (integracao harness-lite com saude medida, decisoes 1 e 4)",
-   "motivo": "Impressao digital do projeto para o plano de execucao do harness-lite. Hoje o proxy sobe com fingerprints de zeros (harness-lite proxy/src/control-boot.ts:139-144); quem trocaria os zeros e o O4."
+   "motivo": "Impressao digital do projeto para o plano de execucao do harness-lite. Hoje o proxy sobe com fingerprints de zeros (harness-lite proxy/src/control-boot.ts:139-144); quem trocaria os zeros e o O4.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.memory",
@@ -116,7 +125,8 @@
    "arquivo": "harness4codex/orchestration.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (linha 1032: 'integrar orchestration.py ao runtime'), item aberto na linha 1406",
-   "motivo": "Primitiva de orquestracao estilo Symphony. O proprio plano registra 'orchestration.py ainda esta desacoplado' (linha 74). Modulo inteiro so tem chamador em tests/test_orchestration.py."
+   "motivo": "Primitiva de orquestracao estilo Symphony. O proprio plano registra 'orchestration.py ainda esta desacoplado' (linha 74). Modulo inteiro so tem chamador em tests/test_orchestration.py.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.orchestration",
@@ -124,7 +134,8 @@
    "arquivo": "harness4codex/orchestration.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
-   "motivo": "Politica de elegibilidade e backoff da orquestracao; parte da reserva da Fase 9."
+   "motivo": "Politica de elegibilidade e backoff da orquestracao; parte da reserva da Fase 9.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.orchestration",
@@ -132,7 +143,8 @@
    "arquivo": "harness4codex/orchestration.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
-   "motivo": "Elegibilidade de issue; parte da reserva da Fase 9."
+   "motivo": "Elegibilidade de issue; parte da reserva da Fase 9.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.orchestration",
@@ -140,7 +152,8 @@
    "arquivo": "harness4codex/orchestration.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
-   "motivo": "Backoff entre tentativas; parte da reserva da Fase 9."
+   "motivo": "Backoff entre tentativas; parte da reserva da Fase 9.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.orchestration",
@@ -148,7 +161,8 @@
    "arquivo": "harness4codex/orchestration.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
-   "motivo": "Area de trabalho por issue; parte da reserva da Fase 9."
+   "motivo": "Area de trabalho por issue; parte da reserva da Fase 9.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.orchestration",
@@ -156,7 +170,8 @@
    "arquivo": "harness4codex/orchestration.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
-   "motivo": "Gerente das areas de trabalho; parte da reserva da Fase 9."
+   "motivo": "Gerente das areas de trabalho; parte da reserva da Fase 9.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.orchestration",
@@ -164,7 +179,8 @@
    "arquivo": "harness4codex/orchestration.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
-   "motivo": "Preparo da area de trabalho; parte da reserva da Fase 9."
+   "motivo": "Preparo da area de trabalho; parte da reserva da Fase 9.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.orchestration",
@@ -172,7 +188,8 @@
    "arquivo": "harness4codex/orchestration.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime)",
-   "motivo": "Chave segura de diretorio por issue; parte da reserva da Fase 9."
+   "motivo": "Chave segura de diretorio por issue; parte da reserva da Fase 9.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.state",
@@ -187,7 +204,8 @@
    "arquivo": "harness4codex/state_db.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "decisao de ligar o lease no caminho de tomada de escopo (amarrada a cerca de epoca do spool, decisao 2): se ligar, o lease entra com a cerca no mesmo ramo; se retirar, sai junto",
-   "motivo": "Decisao 6 de master-harness/docs/decisoes-capacidades-orfas.md. Unico lugar onde owner_epoch sobe (state_db.py:498); `leases` tem 0 linhas e as 207 tarefas estao em owner_epoch = 1 (medido em 2026-10-07)."
+   "motivo": "Decisao 6 de master-harness/docs/decisoes-capacidades-orfas.md. Unico lugar onde owner_epoch sobe (state_db.py:498); `leases` tem 0 linhas e as 207 tarefas estao em owner_epoch = 1 (medido em 2026-10-07).",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "harness4codex.state_db",
@@ -209,7 +227,8 @@
    "arquivo": "harness4codex/workflow.py",
    "categoria": "RESERVA_DECLARADA",
    "gatilho": "Fase 9 do PLANO_AUTOREFORMA_HARNESS4CODEX.md (integrar orchestration.py ao runtime): o laco de turnos e quem leria o limite",
-   "motivo": "Le `orchestration.max_turns` do WORKFLOW.md (linha 14 declara 5). Nada no runtime limita turnos; o valor so e lido em tests/test_workflow.py."
+   "motivo": "Le `orchestration.max_turns` do WORKFLOW.md (linha 14 declara 5). Nada no runtime limita turnos; o valor so e lido em tests/test_workflow.py.",
+   "prazo": "2026-12-31"
   },
   {
    "modulo": "scripts.install",
