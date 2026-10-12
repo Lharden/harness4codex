@@ -45,6 +45,7 @@ Uso:
     python tools/orfaos.py                # JSON, exit 1 se reprovar
     python tools/orfaos.py --report       # legível
     python tools/orfaos.py --sync         # sincroniza tools/orfaos.json
+    python tools/orfaos.py --migrar       # consumidor `arquivo:linha` -> `arquivo::simbolo`
     python tools/orfaos.py --raiz DIR     # outra cópia do repositório
 """
 
@@ -56,6 +57,7 @@ import json
 import re
 import sys
 from collections import defaultdict, deque
+from datetime import date
 from pathlib import Path
 
 try:
@@ -90,7 +92,18 @@ CATEGORIAS = {
 }
 
 #: Campo obrigatório por categoria, além de `motivo`.
+#: `RESERVA_DECLARADA` leva também `prazo` (AAAA-MM-DD): reserva sem data vira ORFAO eterno com outro nome.
 EXIGE = {"RESERVA_DECLARADA": "gatilho", "API_EXTERNA": "consumidor", "PORTAO_DE_SUITE": "consumidor"}
+
+#: Categorias cujo `consumidor` o `conferir` mede no disco. Forma nova: `arquivo::simbolo_ou_texto`, sem número de
+#: linha (a linha envelhece a cada edição do arquivo, F-011). A forma `arquivo:linha` ainda é aceita, como AVISO.
+CATEGORIAS_COM_CONSUMIDOR = {"API_EXTERNA", "PORTAO_DE_SUITE"}
+_PONTEIRO_LINHA = re.compile(r"^\s*([^\s:][^\s]*?):(\d+)(?:-(\d+))?(?=\s|$|[,;)])")
+_PLUGIN_NA_LINHA = re.compile(r"(?:^|\s)-p\s+([A-Za-z_][\w.]*)(?=\s|$)")
+
+#: Fallback do hookspec do pytest: sem `_pytest` importável (outro interpretador, por exemplo o do harness4codex
+#: em 3.10 sem pytest), vale o prefixo. Mais largo que o hookspec, nunca mais estreito.
+PREFIXO_DE_HOOK_PYTEST = "pytest_"
 
 _CAMINHO_PY = re.compile(r"(?:^|[/\\])(\w+)\.py$")
 _PONTUADO = re.compile(r"^\w+(?:\.\w+)+$")
@@ -119,6 +132,49 @@ def _modulos(raiz: Path, pastas: list[str]) -> dict[str, Path]:
             if partes[-1] == "__init__":
                 partes = partes[:-1]
             out[".".join(partes)] = p
+    return out
+
+
+def _nomes_do_hookspec() -> frozenset | None:
+    """Nomes das funções do hookspec do pytest (`_pytest.hookspec`), ou None quando ele não importa (aí vale o
+    prefixo `pytest_`). É o que decide se `pytest_foo` num módulo vivo é gancho de framework ou função solta."""
+    try:
+        import _pytest.hookspec as hs
+    except Exception:  # noqa: BLE001 - qualquer falha de import cai no prefixo
+        return None
+    nomes = frozenset(n for n in dir(hs) if n.startswith(PREFIXO_DE_HOOK_PYTEST) and callable(getattr(hs, n, None)))
+    return nomes or None
+
+
+def _eh_gancho_pytest(nome: str, hookspec: frozenset | None) -> bool:
+    return nome in hookspec if hookspec is not None else nome.startswith(PREFIXO_DE_HOOK_PYTEST)
+
+
+def _resolver_plugin(nome: str, mods: set) -> set:
+    """Módulo(s) que `-p nome` / `pytest_plugins` / `pytest11` nomeia: pelo nome pontuado inteiro, ou, na falta
+    dele, pelo último componente (o `-p plug` do pytest acha `plug` no sys.path; aqui o pacote é `mh.plug`)."""
+    if nome in mods:
+        return {nome}
+    return {m for m in mods if m.rsplit(".", 1)[-1] == nome}
+
+
+def _plugins_citados(tree: ast.AST) -> set:
+    """Nomes de plugin do pytest que o módulo carrega: `["-p", "x"]`, `"... -p x ..."` e `pytest_plugins = [...]`."""
+    out: set = set()
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.List, ast.Tuple)):
+            for a, b in zip(n.elts, n.elts[1:]):
+                if (isinstance(a, ast.Constant) and a.value == "-p" and isinstance(b, ast.Constant)
+                        and isinstance(b.value, str)):
+                    out.add(b.value)
+        elif isinstance(n, ast.Constant) and isinstance(n.value, str):
+            out.update(_PLUGIN_NA_LINHA.findall(n.value))
+        elif (isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "pytest_plugins"
+                                                for t in n.targets)):
+            valor = n.value
+            for c in (valor.elts if isinstance(valor, (ast.List, ast.Tuple)) else [valor]):
+                if isinstance(c, ast.Constant) and isinstance(c.value, str):
+                    out.add(c.value)
     return out
 
 
@@ -233,6 +289,12 @@ def varrer(raiz: Path, entradas_declaradas: list | None = None) -> dict:
                         # O módulo carregado vive numa variável sem nome de módulo (`_cli_s1().executar(a)`,
                         # `mh/cli.py:796`): o atributo que não resolve por alias é procurado nele, como num `*`.
                         am["*" + alvo] = ("star", alvo)
+        # Plugin do pytest carregado por `-p`/`pytest_plugins`: aresta que torna o módulo vivo (se quem carrega
+        # vive). O módulo morto continua morto: a aresta nasce no módulo que carrega, não no plugin.
+        for nome_plugin in _plugins_citados(tree):
+            for alvo in _resolver_plugin(nome_plugin, mods):
+                if alvo != mod:
+                    importa[mod].add(alvo)
         alias[mod] = am
 
     def canon(base: str, nome: str, prof: int = 0) -> tuple | None:
@@ -339,6 +401,9 @@ def varrer(raiz: Path, entradas_declaradas: list | None = None) -> dict:
         metodos_da_classe[c].append(k)
 
     raizes = _raizes(raiz, mods, caminhos, cfg["host"], cfg["comandos"])
+    hookspec = _nomes_do_hookspec()
+    ganchos = [k for k, n in nos.items() if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+               and k[1].startswith(PREFIXO_DE_HOOK_PYTEST) and _eh_gancho_pytest(k[1], hookspec)]
 
     def alcance(sementes_externas: set) -> tuple[set, dict]:
         mod_vivo: dict[str, list[str]] = {m: [orig] for m, (_, orig) in raizes.items()}
@@ -384,6 +449,10 @@ def varrer(raiz: Path, entradas_declaradas: list | None = None) -> dict:
                     semear(k)
         for k in sementes_externas:
             semear(k)
+        # Raiz por protocolo de framework: em módulo vivo, `pytest_*` do hookspec é chamada pelo pytest.
+        for k in ganchos:
+            if k[0] in mod_vivo:
+                semear(k)
         for m in mod_vivo:
             for k in topo.get(m, ()):
                 semear(k)
@@ -442,6 +511,15 @@ def _modulos_citados(texto: str, mod: str, mods: set) -> set:
     return perto or candidatos
 
 
+def _dados_pyproject(p: Path) -> dict:
+    if tomllib is None or not p.is_file():
+        return {}
+    try:
+        return tomllib.loads(p.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError:
+        return {}
+
+
 def _raizes(raiz: Path, mods: set, caminhos: dict[str, Path], pastas_host: list[str],
             comandos: dict[str, str] | None = None) -> dict[str, tuple[set, str]]:
     """Módulo raiz -> (símbolos chamados por fora, origem). Duas fontes:
@@ -451,7 +529,13 @@ def _raizes(raiz: Path, mods: set, caminhos: dict[str, Path], pastas_host: list[
       próprio arquivo, como `"$SCRIPT_DIR/install.py"`), `-m pacote`, `from m import f` e comando nu mapeado em
       `varredura.comandos`, citados onde o host executa.
     """
-    comandos = {c: m for c, m in (comandos or {}).items() if m in mods}
+    comandos = dict(comandos or {})
+    # Subcomando: comando nu igual a um pacote de topo com `__main__.py` é `python -m pacote`. O mapa explícito
+    # em `varredura.comandos` continua valendo e ganha do automático.
+    for m in sorted(mods):
+        if m.endswith(".__main__") and "." not in m[: -len(".__main__")]:
+            comandos.setdefault(m[: -len(".__main__")], m)
+    comandos = {c: m for c, m in comandos.items() if m in mods}
     pat_cmd = (re.compile(r"(?:^|[\s`\"'(])(" + "|".join(re.escape(c) for c in comandos) + r")\s+[a-z]",
                           re.MULTILINE) if comandos else None)
     out: dict[str, tuple[set, str]] = {}
@@ -472,6 +556,11 @@ def _raizes(raiz: Path, mods: set, caminhos: dict[str, Path], pastas_host: list[
                 if modulo in mods:
                     anotar(modulo, {simbolo.split(".")[0]} if simbolo else set(),
                            f"pyproject.toml [project.{grupo}] {nome}")
+
+    for nome, alvo in ((_dados_pyproject(p).get("project", {}).get("entry-points", {}).get("pytest11", {}))
+                       or {}).items():
+        for m in _resolver_plugin(str(alvo).partition(":")[0].strip(), mods):
+            anotar(m, set(), f"pyproject.toml [project.entry-points.pytest11] {nome}")
 
     if not pastas_host:
         return out
@@ -514,6 +603,9 @@ def _raizes(raiz: Path, mods: set, caminhos: dict[str, Path], pastas_host: list[
                 anotar(alvo, set(), rel)
                 if f"{alvo}.__main__" in mods:
                     anotar(f"{alvo}.__main__", set(), rel)
+            for m in _PLUGIN_NA_LINHA.finditer(texto):
+                for alvo in _resolver_plugin(m.group(1), mods):
+                    anotar(alvo, set(), rel)
             for m in pat_from.finditer(texto):
                 anotar(m.group(1), {s.strip().split(" as ")[0].strip() for s in m.group(2).split(",") if s.strip()},
                        rel)
@@ -542,16 +634,86 @@ def _informa(texto: str, nome: str) -> bool:
     return bool(limpo) and set(limpo) - {nome.lower()} != set()
 
 
-def _teste_cita(raiz: Path, consumidor: str, nome: str) -> bool:
-    """`tests/x.py::Classe::teste` existe sob `tests/` e o arquivo cita o símbolo pelo nome."""
-    arquivo = consumidor.split("::", 1)[0].strip()
-    p = Path(raiz) / arquivo
-    if not arquivo.startswith("tests/") or not p.is_file():
+def _repos_irmaos(raiz: Path) -> list[Path]:
+    """Pastas onde procurar um consumidor que mora em OUTRO repositório (`harness4claude/hooks/x.sh`): a pasta-mãe
+    da raiz, e a pasta-mãe do repositório principal quando a raiz é um worktree (`.git` é arquivo `gitdir: ...`)."""
+    saida = [raiz.parent]
+    g = raiz / ".git"
+    if g.is_file():
+        m = re.match(r"gitdir:\s*(.+)", g.read_text(encoding="utf-8", errors="replace").strip())
+        if m:
+            d = Path(m.group(1).strip())
+            if not d.is_absolute():
+                d = (raiz / d).resolve()
+            if d.parent.name == "worktrees":
+                saida.append(d.parent.parent.parent.parent)
+    return list(dict.fromkeys(saida))
+
+
+def _cita(texto: str, parte: str) -> bool:
+    parte = parte.strip()
+    if not parte:
         return False
+    if re.fullmatch(r"\w+", parte):
+        return re.search(rf"\b{re.escape(parte)}\b", texto) is not None
+    return parte in texto
+
+
+def _consumidor(raiz: Path, categoria: str, consumidor: str, nome: str) -> tuple[str, str]:
+    """Mede o `consumidor`. Devolve (veredito, aviso):
+
+    - `ok`: o arquivo existe e cita o símbolo (e cada pedaço depois de `::`);
+    - `nao_cita`: o arquivo existe e não cita (reprova);
+    - `inexistente`: o arquivo devia estar neste repositório e não está (reprova);
+    - `externo`: mora em outro repositório que não está ao lado (não verificável aqui: aviso, não reprova).
+
+    O aviso `ponteiro_com_linha` acompanha a forma antiga `arquivo:linha`, que envelhece sem ninguém ver.
+    """
+    aviso = ""
+    if "::" in consumidor:
+        arquivo, _, resto = consumidor.partition("::")
+        pedacos = [x for x in resto.split("::") if x.strip()]
+    else:
+        m = _PONTEIRO_LINHA.match(consumidor)
+        arquivo, pedacos = (m.group(1), []) if m else (consumidor.split()[0] if consumidor.split() else "", [])
+        aviso = "ponteiro_com_linha"
+    arquivo = arquivo.strip()
+    raiz = Path(raiz)
+    p = raiz / arquivo
+    if categoria == "PORTAO_DE_SUITE":
+        if not arquivo.startswith("tests/") or not p.is_file():
+            return "nao_cita", aviso
+    if not p.is_file():
+        primeiro = arquivo.split("/", 1)[0]
+        if (raiz / primeiro).is_dir() or "/" not in arquivo:
+            return "inexistente", aviso
+        for base in _repos_irmaos(raiz):
+            if (base / arquivo).is_file():
+                p = base / arquivo
+                break
+        else:
+            return "externo", aviso
     texto = p.read_text(encoding="utf-8", errors="replace")
-    nome = nome.rsplit(".", 1)[-1]      # método: o teste cita `a.completa`, não `Arvore.completa`
-    return re.search(rf"\b{re.escape(nome)}\b", texto) is not None and all(
-        re.search(rf"\b(?:class|def)\s+{re.escape(parte)}\b", texto) for parte in consumidor.split("::")[1:])
+    simbolo = nome.rsplit(".", 1)[-1]       # método: o teste cita `a.completa`, não `Arvore.completa`
+    if not _cita(texto, simbolo):
+        return "nao_cita", aviso
+    if categoria == "PORTAO_DE_SUITE":
+        # `tests/x.py::Classe::teste`: cada parte é uma classe ou função definida no arquivo.
+        ok = all(re.search(rf"\b(?:class|def)\s+{re.escape(parte)}\b", texto) for parte in pedacos)
+    else:
+        ok = all(_cita(texto, parte) for parte in pedacos)
+    return ("ok" if ok else "nao_cita"), aviso
+
+
+def _prazo(valor: str | None, hoje: date) -> str:
+    """`ausente`, `invalido` (não é AAAA-MM-DD), `vencido` ou `vigente`."""
+    if not (valor or "").strip():
+        return "ausente"
+    try:
+        limite = date.fromisoformat(str(valor).strip())
+    except ValueError:
+        return "invalido"
+    return "vencido" if hoje > limite else "vigente"
 
 
 def _ganhou_chamador(d: dict, k: tuple, m: dict) -> bool:
@@ -566,9 +728,10 @@ def _pendente(arquivo: str, escopos: list[dict]) -> dict | None:
     return next((e for e in escopos if arquivo.startswith(e.get("prefixo") or "\0")), None)
 
 
-def conferir(raiz: Path, medida: dict | None = None) -> dict:
-    """Confronta o medido com o declarado."""
+def conferir(raiz: Path, medida: dict | None = None, hoje: date | None = None) -> dict:
+    """Confronta o medido com o declarado. `hoje` existe para o teste fixar a data contra o `prazo` das reservas."""
     raiz = Path(raiz).resolve()
+    hoje = hoje or date.today()
     m = medida or varrer(raiz)
     inv = ler_inventario(raiz)
     escopos = inv["escopos_pendentes"]
@@ -583,6 +746,7 @@ def conferir(raiz: Path, medida: dict | None = None) -> dict:
 
     declarado: dict[tuple, dict] = {}
     invalidas: list[dict] = []
+    avisos: list[dict] = []
     for d in inv["declaracoes"]:
         k = (d.get("modulo"), d.get("nome"))
         declarado[k] = d
@@ -595,8 +759,19 @@ def conferir(raiz: Path, medida: dict | None = None) -> dict:
             invalidas.append({**base, "por_que": "motivo_nao_informa"})
         elif d["categoria"] in EXIGE and not (d.get(EXIGE[d["categoria"]]) or "").strip():
             invalidas.append({**base, "por_que": f"sem_{EXIGE[d['categoria']]}"})
-        elif d["categoria"] == "PORTAO_DE_SUITE" and not _teste_cita(raiz, d["consumidor"], k[1] or ""):
-            invalidas.append({**base, "por_que": "consumidor_nao_cita"})
+        elif d["categoria"] == "RESERVA_DECLARADA" and _prazo(d.get("prazo"), hoje) != "vigente":
+            invalidas.append({**base, "por_que": {"ausente": "sem_prazo", "invalido": "prazo_invalido",
+                                                  "vencido": "prazo_vencido"}[_prazo(d.get("prazo"), hoje)]})
+        elif d["categoria"] in CATEGORIAS_COM_CONSUMIDOR:
+            veredito, aviso = _consumidor(raiz, d["categoria"], d["consumidor"], k[1] or "")
+            if veredito in ("nao_cita", "inexistente"):
+                invalidas.append({**base, "por_que": "consumidor_nao_cita" if veredito == "nao_cita"
+                                  else "consumidor_inexistente"})
+            if veredito == "externo":
+                avisos.append({**base, "aviso": "consumidor_externo_nao_verificado",
+                               "consumidor": d["consumidor"]})
+            if aviso:
+                avisos.append({**base, "aviso": aviso, "consumidor": d["consumidor"]})
 
     orfaos, pendentes = [], []
     for k, info in sorted(m["publicos"].items()):
@@ -629,6 +804,7 @@ def conferir(raiz: Path, medida: dict | None = None) -> dict:
         "orfaos_nao_declarados": orfaos,
         "declaracoes_obsoletas": obsoletas,
         "declaracoes_invalidas": invalidas,
+        "avisos": avisos,
         "escopos_invalidos": escopos_invalidos,
         "pendentes": pendentes,
         "escopos_pendentes": [{"prefixo": e.get("prefixo"), "gatilho": e.get("gatilho")} for e in escopos],
@@ -676,6 +852,33 @@ def sincronizar(raiz: Path) -> dict:
             "total": len(inv["declaracoes"])}
 
 
+def migrar_ponteiros(raiz: Path) -> dict:
+    """Converte `consumidor` de `arquivo:linha[-linha] (texto)` para `arquivo::simbolo`. O símbolo é o nome da
+    declaração, achado no arquivo (o consumidor existente que não o cita fica como está e é relatado)."""
+    raiz = Path(raiz).resolve()
+    inv = ler_inventario(raiz)
+    convertidas: list[str] = []
+    ficaram: list[dict] = []
+    for d in inv["declaracoes"]:
+        c = (d.get("consumidor") or "").strip()
+        if not c or "::" in c:
+            continue
+        m = _PONTEIRO_LINHA.match(c)
+        if not m:
+            continue
+        simbolo = (d.get("nome") or "").rsplit(".", 1)[-1]
+        novo = f"{m.group(1)}::{simbolo}"
+        veredito, _ = _consumidor(raiz, d.get("categoria", ""), novo, d.get("nome") or "")
+        if veredito == "ok":
+            d["consumidor"] = novo
+            convertidas.append(f"{d.get('modulo')}.{d.get('nome')} -> {novo}")
+        else:
+            ficaram.append({"declaracao": f"{d.get('modulo')}.{d.get('nome')}", "consumidor": c,
+                            "por_que": f"nao migrou: {veredito}"})
+    (raiz / INVENTARIO_REL).write_text(json.dumps(inv, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    return {"convertidas": convertidas, "ficaram": ficaram}
+
+
 # -------------------------------------------------------------------------------------------------------- saída ----
 def mensagem_de_falha(payload: dict) -> str:
     """Diz qual caso é, e só promete verde no que o comando resolve sozinho."""
@@ -698,8 +901,14 @@ def mensagem_de_falha(payload: dict) -> str:
                   "motivo_vazio": "motivo vazio",
                   "motivo_nao_informa": "o motivo so repete o nome",
                   "sem_gatilho": "RESERVA_DECLARADA sem `gatilho` (o que a arma)",
-                  "sem_consumidor": "sem `consumidor` (quem chama: arquivo do host, ou tests/x.py::Classe)",
-                  "consumidor_nao_cita": "o `consumidor` nao existe sob tests/ ou nao cita o simbolo",
+                  "sem_consumidor": "sem `consumidor` (quem chama, como `arquivo::simbolo`)",
+                  "consumidor_nao_cita": "o arquivo do `consumidor` nao cita o simbolo nem o texto depois de `::` "
+                                         "(PORTAO_DE_SUITE: ou nao existe sob tests/)",
+                  "consumidor_inexistente": "o arquivo do `consumidor` nao existe",
+                  "sem_prazo": "RESERVA_DECLARADA sem `prazo` (AAAA-MM-DD)",
+                  "prazo_invalido": "`prazo` nao e uma data AAAA-MM-DD",
+                  "prazo_vencido": "o `prazo` da reserva venceu: ligar o consumidor, apagar, ou renovar com "
+                                   "motivo escrito",
                   }[d["por_que"]]
         linhas.append(f"DECLARACAO INVALIDA  {d['modulo']}.{d['nome']}  {porque}")
     for e in payload["escopos_invalidos"]:
@@ -734,6 +943,12 @@ def render(payload: dict) -> str:
     for e in payload["escopos_pendentes"]:
         n = sum(1 for o in payload["pendentes"] if o["arquivo"].startswith(e["prefixo"] or "\0"))
         linhas.append(f"  pendente {e['prefixo']}: {n} sem chamador, nao julgados (gatilho: {e['gatilho']})")
+    for a in payload.get("avisos", []):
+        texto = {"ponteiro_com_linha": "ponteiro `arquivo:linha` envelhece: migrar para `arquivo::simbolo` "
+                                       "(python tools/orfaos.py --migrar)",
+                 "consumidor_externo_nao_verificado": "o consumidor mora em outro repositorio que nao esta ao "
+                                                      "lado: nao verificado nesta maquina"}[a["aviso"]]
+        linhas.append(f"  AVISO  {a['modulo']}.{a['nome']}  {texto}")
     linhas.append("")
     linhas.append(mensagem_de_falha(payload) if not payload["ready"] else "[OK] nenhum orfao nao declarado")
     return "\n".join(linhas)
@@ -744,11 +959,16 @@ def main(argv=None) -> int:
     p.add_argument("--raiz", default=None, help="raiz do repositorio (default: a deste arquivo)")
     p.add_argument("--report", action="store_true", help="saida legivel em vez de JSON")
     p.add_argument("--sync", action="store_true", help="sincroniza tools/orfaos.json")
+    p.add_argument("--migrar", action="store_true",
+                   help="converte consumidor `arquivo:linha` em `arquivo::simbolo` no tools/orfaos.json")
     args = p.parse_args(argv)
 
     raiz = Path(args.raiz).resolve() if args.raiz else Path(__file__).resolve().parent.parent
     if args.sync:
         print(json.dumps(sincronizar(raiz), ensure_ascii=False, indent=1))
+        return 0
+    if args.migrar:
+        print(json.dumps(migrar_ponteiros(raiz), ensure_ascii=False, indent=1))
         return 0
     payload = conferir(raiz)
     print(render(payload) if args.report else json.dumps(payload, ensure_ascii=False, indent=1))
