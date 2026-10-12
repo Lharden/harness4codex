@@ -1,10 +1,22 @@
+# DERIVADO - nao edite este arquivo.
+#
+# A fonte e `master-harness/tools/orfaos.py`, e ela e a unica
+# dona do scanner de orfaos. O repositorio do host `codex` nao importa o
+# master-harness: recebe o arquivo inteiro, e o que muda entre os repositorios
+# mora no inventario (`tools/orfaos.json`, chave `varredura`), nunca aqui.
+#
+# Para mudar o que esta aqui: edite a fonte e rode `mh identidade semear`.
+# Para saber se derivou: `mh identidade check` (sai 1 se divergir).
+#
+# ---- fim do cabecalho vendorizado; daqui para baixo e copia exata ----
 """Guarda de órfão: símbolo público de topo sem caminho até uma raiz de produção.
 
 Decisão 7 de `master-harness/docs/decisoes-capacidades-orfas.md` (2026-10-07): inventário e guarda por
 repositório. Porte do `harness4claude/tools/orfaos.py`; a doutrina é a mesma e está no próprio `tools/orfaos.json`:
-o scanner mede o fato a cada execução, o inventário guarda o julgamento. **Este arquivo é o mesmo, byte a byte, no
-master-harness e no harness4codex**; o que muda entre eles (pastas de código, pastas de host, escopos pendentes)
-mora no inventário, em `varredura`.
+o scanner mede o fato a cada execução, o inventário guarda o julgamento. **O master-harness é o dono deste
+arquivo, e a cópia dos hosts é gerada** (`mh identidade semear --artefato orfaos`): cabeçalho de marca, e abaixo
+dele este arquivo byte a byte, conferido por `mh identidade check`. O que muda entre os repositórios (pastas de
+código, pastas de host, escopos pendentes) mora no inventário, em `varredura`.
 
 **Alcançabilidade, não contagem de referência.** Um símbolo citado num teste não roda em produção; um símbolo
 chamado só por outro símbolo morto não roda; recursão não é chamador. A pergunta é se existe caminho de uma RAIZ
