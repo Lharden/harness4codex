@@ -1,3 +1,28 @@
+# DERIVADO - nao edite este arquivo.
+#
+# A fonte e `master-harness/mh/command_policy.py`, e ela e a unica
+# dona da politica de comando do git guard. O repositorio do host `codex`
+# nao importa o master-harness: recebe o arquivo inteiro. O que cada host faz
+# com a decisao (bloquear, avisar, o fallback do Claude) mora no hook dele.
+#
+# Para mudar o que esta aqui: edite a fonte e rode `mh identidade semear`.
+# Para saber se derivou: `mh identidade check` (sai 1 se divergir).
+#
+# ---- fim do cabecalho vendorizado; daqui para baixo e copia exata ----
+"""A politica de comando do git guard dos dois hosts: uma fonte, duas copias geradas.
+
+Le um comando de shell e decide `deny`, `require_approval`, `warn`, `allow` ou `unknown`. Quem decide o que fazer
+com a decisao e o hook de cada host: `harness4claude/hooks/harness_git_guard.py` (que ainda tenta um fallback linha
+a linha no `unknown`) e `harness4codex/harness4codex/git_guard.py`.
+
+Ate 2026-10-14 havia duas versoes da mesma linhagem, mantidas a mao, e o conserto do harness4codex (`afb37ff`:
+operador `&`, prefixos e shells aninhados) nao chegou ao harness4claude: 11 de 23 formas de comando git destrutivo
+passavam no guard do Claude (master-harness, plano-desktop §13.38). Agora este arquivo e a fonte, e
+`mh identidade semear --artefato command_policy` entrega as duas copias, com marca; `mh identidade check` confere.
+
+Stdlib pura: os hooks nao podem depender do pacote `mh` estar importavel, e o guard do Claude roda no prazo do host.
+"""
+
 from __future__ import annotations
 
 import re
@@ -194,7 +219,8 @@ def _git_subcommand_args(args: tuple[str, ...]) -> tuple[str, ...]:
     """Os argumentos a partir do subcomando, pulando as opcoes globais.
 
     Ate 2026-10-07 o subcomando era `args[0]`, e `git -C <dir> branch -D x` era
-    lido como o subcomando `-c`: `branch -D` e push passavam sem a politica.
+    lido como o subcomando `-c`: 12 `branch -D` reais passaram como allow nos
+    transcripts da maquina, e 41 pushes sem o aviso.
     """
     index = 0
     while index < len(args) and args[index].startswith("-"):
@@ -220,11 +246,12 @@ def _evaluate_invocation(invocation: CommandInvocation) -> PolicyDecision:
             if any(flag in {"--force", "-f", "--force-with-lease"} for flag in flags):
                 return PolicyDecision("deny", "force push", invocation)
             return PolicyDecision("warn", "confirm the reviewed git push target and diff", invocation)
+    # Os dois hosts mudam o proprio registro de plugins pela CLI: `codex plugin add` e `claude plugin install`.
     if (
-        invocation.program == "codex"
+        invocation.program in {"codex", "claude"}
         and len(args) >= 2
         and args[0] in {"plugin", "plugins"}
         and args[1] in {"add", "install", "remove", "uninstall"}
     ):
-        return PolicyDecision("require_approval", "Codex plugin registry mutation", invocation)
+        return PolicyDecision("require_approval", f"{invocation.program} plugin registry mutation", invocation)
     return PolicyDecision("allow", invocation=invocation)
