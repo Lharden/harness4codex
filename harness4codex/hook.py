@@ -10,11 +10,11 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+from . import spool_mirror
 from .classifier import classify_prompt
 from .git_guard import inspect_command
 from .harness_lite_adapter import preview_for_prompt
 from .memory import HarnessMemoryStore
-from . import spool_mirror
 from .science_adapter import science_context
 from .state import HarnessStateStore, default_harness_home, store_for_payload
 from .state_db import cobra_evidencia_nesta_fase, tipo_de_evidencia
@@ -472,7 +472,7 @@ def _task_do_banco(state: dict[str, Any], store: HarnessStateStore) -> dict[str,
         return None
     try:
         return store.database.task(str(task_id))
-    except Exception:  # noqa: BLE001 - erro de leitura nunca abre o portao
+    except Exception:
         return None
 
 

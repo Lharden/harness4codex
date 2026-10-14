@@ -178,7 +178,7 @@ def test_graph_cli_grava_artefato_de_contexto(tmp_path, capsys):
     assert artefato["scope_id"] == "s-sonda"
     assert artefato["freshness"] == "fresh"
     assert artefato["manifest_hash"] == hashlib.sha256(grafo.read_bytes()).hexdigest()
-    assert artefato["queries"][0]["text_hash"] == hashlib.sha256("quem chama modulo".encode("utf-8")).hexdigest()
+    assert artefato["queries"][0]["text_hash"] == hashlib.sha256(b"quem chama modulo").hexdigest()
 
 
 def test_user_prompt_de_docs_injeta_pipeline_de_documentacao(tmp_path):

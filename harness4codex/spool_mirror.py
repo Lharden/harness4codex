@@ -25,14 +25,15 @@ usuario perde o turno por causa de telemetria.
 
 from __future__ import annotations
 
-from . import _escopo
-
+import contextlib
 import hashlib
 import json
 import os
 import re
 import uuid
 from datetime import datetime, timezone
+
+from . import _escopo
 
 __all__ = [
     "bloco_de_presenca",
@@ -285,10 +286,8 @@ def drenar_canal() -> str:
     finally:
         if con is not None:
             con.close()
-    try:
+    with contextlib.suppress(Exception):
         spool.registrar_dreno(base, rel)
-    except Exception:
-        pass
     if not rel.correu:
         return (f"CANAL: o dreno de coordenacao FALHOU ({rel.falha}). "
                 "O outbox nao foi consumido e nada foi perdido.")

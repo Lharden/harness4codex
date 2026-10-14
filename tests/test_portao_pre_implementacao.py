@@ -244,7 +244,7 @@ def test_AC10_fases_de_implementacao_existem_no_contrato_e_pipelines_sem_elas_es
     from harness4codex.state_db import FASES_DE_IMPLEMENTACAO, tipo_de_evidencia
 
     fases_do_contrato = {fase for fases in CONTRATO.values() for fase in fases}
-    assert FASES_DE_IMPLEMENTACAO <= fases_do_contrato
+    assert fases_do_contrato >= FASES_DE_IMPLEMENTACAO
 
     sem_implementacao = {
         nome
