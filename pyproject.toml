@@ -17,7 +17,10 @@ dependencies = ["tomli>=2; python_version < '3.11'"]
 # Python de producao (3.14: os hooks do HX chamam o `python` do PATH). O `.venv` nasce com
 # `UV_PYTHON_DOWNLOADS=never uv sync --locked`; o `mh testar` e o `mh pronto` o criam. Antes, o `pytest` vinha do site
 # de quem rodava a suite, sem declaracao nenhuma aqui.
-dev = ["pytest>=8"]
+# `pyyaml`: a prova dinamica do master-harness (lote 3-B) roda as sondas deste repositorio num venv montado deste lock
+# e valida o front matter das `SKILL.md` sabotadas com o yaml dele (requisito do host em `mh/sabotagens.py`). Vinha do
+# site do usuario, que a prova punha no `PYTHONPATH` da rodada.
+dev = ["pytest>=8", "pyyaml>=6.0"]
 
 [tool.uv]
 # O `uv sync` nao instala o proprio projeto: a producao importa o `harness4codex` da arvore (os hooks poem a raiz no
