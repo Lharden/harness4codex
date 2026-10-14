@@ -12,6 +12,19 @@ license = "MIT"
 authors = [{ name = "Lharden" }]
 dependencies = ["tomli>=2; python_version < '3.11'"]
 
+[dependency-groups]
+# Ambiente de teste (Onda 3 do master-harness, lote 3-A): o `uv.lock` trava as versoes e o `.python-version` diz o
+# Python de producao (3.14: os hooks do HX chamam o `python` do PATH). O `.venv` nasce com
+# `UV_PYTHON_DOWNLOADS=never uv sync --locked`; o `mh testar` e o `mh pronto` o criam. Antes, o `pytest` vinha do site
+# de quem rodava a suite, sem declaracao nenhuma aqui.
+dev = ["pytest>=8"]
+
+[tool.uv]
+# O `uv sync` nao instala o proprio projeto: a producao importa o `harness4codex` da arvore (os hooks poem a raiz no
+# `sys.path`), e o `pytest` roda da raiz. Instalar daria um ambiente que producao nao tem, e a descoberta plana do
+# setuptools nem constroi (`hooks`, `skills` e `harness4codex` no topo; medido no lote 3-A).
+package = false
+
 [tool.setuptools.package-data]
 harness4codex = ["_contract/**/*.json"]
 
