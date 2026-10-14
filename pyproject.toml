@@ -40,7 +40,7 @@ line-length = 120
 target-version = "py310"
 # Copias geradas pelo `mh identidade semear` (fonte no master-harness, cabecalho DERIVADO):
 # o lint delas e do MH; editar aqui quebraria `mh identidade check`.
-extend-exclude = [".pytest_tmp_*", "graphify-out", "harness4codex/_escopo.py", "tools/orfaos.py"]
+extend-exclude = [".pytest_tmp_*", "graphify-out", "harness4codex/_escopo.py", "tools/orfaos.py", "tests/_ambiente.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "SIM", "ISC", "RUF"]
