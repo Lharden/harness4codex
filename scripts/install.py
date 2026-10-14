@@ -299,11 +299,13 @@ def _ignore_copy(dir_path: str, names: list[str]) -> set[str]:
         ".pytest_cache_codex",
         ".pytest_tmp_codex",
         ".ruff_cache",
+        ".venv",
         "__pycache__",
         "graphify-out",
     }
     ignored.update(name for name in names if name.startswith("pytest-cache-files-"))
     ignored.update(name for name in names if name.startswith(".codex_ops_validation"))
+    ignored.update(name for name in names if name.startswith(".venv-"))
     return ignored.intersection(names)
 
 

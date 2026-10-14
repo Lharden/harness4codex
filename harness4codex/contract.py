@@ -76,7 +76,7 @@ def arvore_do_contrato() -> tuple[Path, str]:
         if (_mh_contrato.CANONICA / "capabilities.json").is_file():
             return _mh_contrato.CANONICA, "mh"
         return vizinho, "vizinho:canonica-ausente"
-    except Exception as exc:  # noqa: BLE001 - o fallback nao pode ter buraco
+    except Exception as exc:
         return vizinho, f"vizinho:{type(exc).__name__}"
 
 

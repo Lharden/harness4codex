@@ -40,8 +40,8 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Iterable, Mapping
 
 #: A variavel com que a prova dinamica declara o venv da rodada.
 PROVA_VENV = "MH_PROVA_VENV"

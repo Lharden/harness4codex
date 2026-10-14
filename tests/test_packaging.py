@@ -202,4 +202,6 @@ def test_skills_nomeiam_comando_de_cli_que_o_parser_aceita():
 
     # a metade que reprova: uma linha com flag que o parser nao conhece nao passa
     with pytest.raises(SystemExit):
-        parser.parse_args(["graph", "context", "--repo", "r", "--task", "t", "--scope", "s", "--query", "q", "--inexistente", "x"])
+        parser.parse_args(
+            ["graph", "context", "--repo", "r", "--task", "t", "--scope", "s", "--query", "q", "--inexistente", "x"]
+        )

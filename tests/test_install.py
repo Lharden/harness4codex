@@ -288,3 +288,22 @@ def test_install_uses_global_hooks_when_native_plugin_is_not_enabled(tmp_path):
     commands = [hook["command"] for entry in installed["hooks"]["Stop"] for hook in entry["hooks"]]
     assert result["hook_mode"] == "global"
     assert len([command for command in commands if "codex_harness_hook.py" in command]) == 1
+
+
+def test_install_nao_copia_ambientes_virtuais(tmp_path):
+    source = tmp_path / "source"
+    (source / "hooks").mkdir(parents=True)
+    (source / "hooks" / "codex_harness_hook.py").write_text("# hook\n", encoding="utf-8")
+    (source / "skills" / "codex-harness-workflow").mkdir(parents=True)
+    (source / "skills" / "codex-harness-workflow" / "SKILL.md").write_text("# skill\n", encoding="utf-8")
+    for nome in (".venv", ".venv-ci"):
+        (source / nome / "Scripts").mkdir(parents=True)
+        (source / nome / "Scripts" / "python.exe").write_text("x", encoding="utf-8")
+    codex_home = tmp_path / "codex"
+
+    install(source, codex_home)
+
+    plugin = codex_home / "plugins" / "harness4codex"
+    assert (plugin / "hooks" / "codex_harness_hook.py").exists()
+    assert not (plugin / ".venv").exists()
+    assert not (plugin / ".venv-ci").exists()
