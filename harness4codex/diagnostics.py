@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 try:
     import tomllib
@@ -196,11 +197,25 @@ def _read_heartbeat(harness_dir: Path, event: str) -> float | None:
     return value if value > 0 else None
 
 
-def _cli_turns_after(home: Path, since: float) -> list[float]:
+class _CliTurn(NamedTuple):
+    """Um turno assertivel: quando comecou, de que rollout veio e em que `cwd` a sessao rodava.
+
+    O-013 (2026-10-13): o HOOK_INACTIVE dizia quantos turnos rodaram depois do batimento, mas nao quais. O turno era
+    de uma prova `codex exec --disable hooks` que gravou sessao no `CODEX_HOME` real, e achar isso pediu varrer os
+    rollouts a mao. Com o caminho e o `cwd` do turno mais novo na mensagem, quem le ve de onde ele veio. Nenhum turno e
+    ignorado por `cwd`: a mensagem informa, o criterio do veredito nao muda.
+    """
+
+    started: float
+    rollout: Path
+    cwd: str
+
+
+def _cli_turns_after(home: Path, since: float) -> list[_CliTurn]:
     sessions = home / "sessions"
     if not sessions.is_dir():
         return []
-    turns: list[float] = []
+    turns: list[_CliTurn] = []
     for path in sessions.rglob("rollout-*.jsonl"):
         try:
             if path.stat().st_mtime <= since:
@@ -218,6 +233,8 @@ def _cli_turns_after(home: Path, since: float) -> list[float]:
         source = meta.get("source") if isinstance(meta, dict) else None
         if not isinstance(source, str) or source not in _ASSERTABLE_TURN_SOURCES:
             continue
+        cwd = meta.get("cwd")
+        cwd = cwd if isinstance(cwd, str) and cwd else "?"
         for line in lines[1:]:
             if '"task_started"' not in line:
                 continue
@@ -226,7 +243,7 @@ def _cli_turns_after(home: Path, since: float) -> list[float]:
             except (ValueError, AttributeError):
                 continue
             if isinstance(started, (int, float)) and started > since:
-                turns.append(float(started))
+                turns.append(_CliTurn(float(started), path, cwd))
     return turns
 
 
@@ -239,14 +256,15 @@ def _hook_activity_check(harness_dir: Path, home: Path, installed_at: float | No
     reference = beat if beat is not None else installed_at
     if reference is not None:
         since = max(reference, now - ACTIVITY_WINDOW_SECONDS)
-        missed = [turn for turn in _cli_turns_after(home, since) if turn > since + HEARTBEAT_GRACE_SECONDS]
+        missed = [turn for turn in _cli_turns_after(home, since) if turn.started > since + HEARTBEAT_GRACE_SECONDS]
         if missed:
             fired = f"last fired at {_iso(beat)}" if beat is not None else "never fired since this plugin was installed"
+            newest = max(missed, key=lambda turn: turn.started)
             return DiagnosticCheck(
                 "HOOK_INACTIVE",
                 "fail",
-                f"{len(missed)} Codex CLI turn(s) ran after {_iso(since)}, the newest at {_iso(max(missed))}, "
-                f"but the UserPromptSubmit hook {fired}.",
+                f"{len(missed)} Codex CLI turn(s) ran after {_iso(since)}, the newest at {_iso(newest.started)} "
+                f"(rollout {newest.rollout}, cwd {newest.cwd}), but the UserPromptSubmit hook {fired}.",
             )
     if beat is not None and now - beat <= ACTIVITY_WINDOW_SECONDS:
         return DiagnosticCheck("HOOK_ACTIVE", "pass", f"UserPromptSubmit hook last fired at {_iso(beat)}.")

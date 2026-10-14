@@ -439,11 +439,14 @@ def _installed_at(home, moment):
     os.utime(active_hooks, (moment, moment))
 
 
-def _write_rollout(home, started_at, *, source="exec", originator="codex_exec", name="a"):
+def _write_rollout(home, started_at, *, source="exec", originator="codex_exec", name="a", cwd=None):
     path = home / "sessions" / "2026" / "09" / "23" / f"rollout-{name}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
+    meta = {"source": source, "originator": originator}
+    if cwd is not None:
+        meta["cwd"] = cwd
     lines = [
-        {"type": "session_meta", "payload": {"source": source, "originator": originator}},
+        {"type": "session_meta", "payload": meta},
         {"type": "event_msg", "payload": {"type": "task_started", "started_at": int(started_at)}},
     ]
     path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
@@ -496,6 +499,37 @@ def test_doctor_fails_when_cli_turns_are_newer_than_the_last_heartbeat(tmp_path)
     _write_rollout(tmp_path, now - 3600)
 
     assert _check(_doctor(tmp_path, now=now), "HOOK_INACTIVE").status == "fail"
+
+
+def test_hook_inactive_names_the_rollout_and_cwd_of_the_newest_turn(tmp_path):
+    """O-013: um `codex exec` depois do batimento reprova, e a mensagem diz de onde ele veio.
+
+    Dois turnos depois do batimento: a mensagem cita o rollout e o `cwd` do mais novo, nunca os do mais velho. Nenhum
+    turno some por `cwd`: os dois contam.
+    """
+    now = time.time()
+    _write_config(tmp_path, HEALTHY_CONFIG)
+    _write_heartbeat(tmp_path, now - 5 * 3600)
+    _write_rollout(tmp_path, now - 3 * 3600, name="velho", cwd="C:/prova/velha")
+    _write_rollout(tmp_path, now - 3600, name="novo", cwd="C:/prova/exec-sem-hooks")
+
+    check = _check(_doctor(tmp_path, now=now), "HOOK_INACTIVE")
+
+    novo = tmp_path / "sessions" / "2026" / "09" / "23" / "rollout-novo.jsonl"
+    assert check.status == "fail"
+    assert check.message.startswith("2 Codex CLI turn(s)")
+    assert f"rollout {novo}" in check.message
+    assert "cwd C:/prova/exec-sem-hooks" in check.message
+    assert "rollout-velho" not in check.message and "C:/prova/velha" not in check.message
+
+
+def test_hook_inactive_marks_a_rollout_without_cwd(tmp_path):
+    now = time.time()
+    _write_config(tmp_path, HEALTHY_CONFIG)
+    _write_heartbeat(tmp_path, now - 5 * 3600)
+    _write_rollout(tmp_path, now - 3600)
+
+    assert "cwd ?)" in _check(_doctor(tmp_path, now=now), "HOOK_INACTIVE").message
 
 
 def test_doctor_reports_the_hook_active_when_heartbeat_follows_the_turn(tmp_path):
