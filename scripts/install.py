@@ -9,6 +9,7 @@ import subprocess
 import sys
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -447,16 +448,81 @@ def install(
     return result
 
 
+#: The published sha: the local ref of the remote main branch (no network). Same rule as `mh deploy apply` (O-014).
+PUBLISHED_REF = "refs/remotes/origin/main"
+#: Where each install that overrode the published-source check is recorded, under the Codex home.
+FORCED_LOG = Path("harness4codex") / "install-forced.jsonl"
+
+
+def _git(source: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-C", str(source), *args], stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace", timeout=60,
+                          check=False)
+
+
+def unpublished_source_reason(source: Path) -> str:
+    """Empty when `source` is a clean git checkout whose HEAD is the published `origin/main`; otherwise why not.
+
+    The install copies the whole source tree (not only tracked files), so untracked files count as dirty too. On
+    2026-10-14 an install from an old `git archive` rolled the Codex marketplace back to a tree older than the
+    published batch (O-014): this is the check that refuses it."""
+    if not (source / ".git").exists():
+        return f"{source} is not a git checkout (an archive or a copy cannot prove it is the published tree)"
+    status = _git(source, "status", "--porcelain", "--untracked-files=normal")
+    if status.returncode != 0:
+        return f"git status exited {status.returncode} in {source}: {status.stderr.strip()[-200:]}"
+    changed = [line for line in status.stdout.splitlines() if line.strip()]
+    if changed:
+        return f"{source} has {len(changed)} uncommitted or untracked path(s) (e.g. {changed[0].strip()})"
+    head = _git(source, "rev-parse", "--verify", "HEAD^{commit}")
+    published = _git(source, "rev-parse", "--verify", "--quiet", f"{PUBLISHED_REF}^{{commit}}")
+    if head.returncode != 0:
+        return f"{source} has no HEAD: {head.stderr.strip()[-200:]}"
+    if published.returncode != 0 or not published.stdout.strip():
+        return f"{source} has no origin/main: there is no published sha to compare with"
+    if head.stdout.strip() != published.stdout.strip():
+        return (f"{source} is at {head.stdout.strip()[:10]}, but the published origin/main is "
+                f"{published.stdout.strip()[:10]}")
+    return ""
+
+
+def record_forced_install(codex_home: Path, source: Path, reason: str, why: str) -> Path:
+    log = codex_home.expanduser() / FORCED_LOG
+    log.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"at": datetime.now(UTC).isoformat(timespec="seconds"), "source": str(source),
+             "problem": reason, "reason": why}
+    with log.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return log
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install Harness4Codex into a Codex home directory.")
     parser.add_argument("--source", default=Path(__file__).resolve().parents[1], type=Path)
     parser.add_argument("--codex-home", default=Path.home() / ".codex", type=Path)
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--force-unpublished", default=None, metavar="REASON",
+                        help="install even when the source is not a clean checkout at origin/main; the reason is "
+                             "recorded in <codex-home>/harness4codex/install-forced.jsonl")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if not args.dry_run:
+        problem = unpublished_source_reason(args.source.resolve())
+        if problem and args.force_unpublished is None:
+            print(f"install refused: the source is not the published tree\n  {problem}\n"
+                  "publish it (commit, merge to main, push) and run again; to install anyway, "
+                  '--force-unpublished "<reason>" (it is recorded)', file=sys.stderr)
+            return 2
+        if problem:
+            if not args.force_unpublished.strip():
+                print("--force-unpublished needs a reason (one sentence), which is recorded", file=sys.stderr)
+                return 2
+            log = record_forced_install(args.codex_home, args.source.resolve(), problem,
+                                        args.force_unpublished.strip())
+            print(f"FORCED ({args.force_unpublished.strip()}) over: {problem}  [recorded in {log}]", file=sys.stderr)
     result = install(args.source, args.codex_home, args.dry_run)
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
