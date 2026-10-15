@@ -42,6 +42,12 @@ Or on PowerShell:
 
 The compatibility installer:
 
+0. Refuses (exit 2) a source that is not the published tree: it must be a git
+   checkout with no uncommitted or untracked paths and with `HEAD` equal to the
+   local `origin/main`. An archive or a copy is refused. `--force-unpublished
+   "<reason>"` (`-ForceUnpublished` on PowerShell) installs anyway and records
+   the reason in `<codex-home>/harness4codex/install-forced.jsonl`. `--dry-run`
+   writes nothing and skips the check.
 1. Copies the plugin to `~/.codex/plugins/harness4codex`.
 2. Installs the packaged Harness4Codex skills.
 3. Enables `[features] hooks = true`.

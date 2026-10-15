@@ -307,3 +307,98 @@ def test_install_nao_copia_ambientes_virtuais(tmp_path):
     assert (plugin / "hooks" / "codex_harness_hook.py").exists()
     assert not (plugin / ".venv").exists()
     assert not (plugin / ".venv-ci").exists()
+
+
+# --- O-014: the install only runs from the published tree (clean checkout at origin/main) ------------------------
+def _git(repo, *args):
+    return subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", *args], cwd=str(repo), check=True,
+                          stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                          text=True).stdout.strip()
+
+
+def _published_source(tmp_path):
+    remote, source = tmp_path / "remote.git", tmp_path / "source"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True, stdin=subprocess.DEVNULL,
+                   stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    source.mkdir()
+    (source / "a.txt").write_text("a\n", encoding="utf-8")
+    _git(source, "init", "-q", "-b", "main")
+    _git(source, "add", "-A")
+    _git(source, "commit", "-q", "-m", "base", "--no-verify")
+    _git(source, "remote", "add", "origin", str(remote))
+    _git(source, "push", "-q", "origin", "main")
+    return source
+
+
+@pytest.fixture
+def installs(monkeypatch):
+    import scripts.install as module
+
+    calls = []
+    monkeypatch.setattr(module, "install", lambda source, home, dry=False: calls.append(source) or {"ok": "1"})
+    return module, calls
+
+
+def test_published_source_installs(tmp_path, installs):
+    module, calls = installs
+    source = _published_source(tmp_path)
+
+    assert module.unpublished_source_reason(source) == ""
+    assert module.main(["--source", str(source), "--codex-home", str(tmp_path / "home")]) == 0
+    assert calls == [source]
+
+
+@pytest.mark.parametrize("damage", ["modified", "untracked", "unpublished_commit", "no_remote", "archive"])
+def test_unpublished_source_is_refused_before_copying(tmp_path, installs, capsys, damage):
+    module, calls = installs
+    source = _published_source(tmp_path)
+    if damage == "modified":
+        (source / "a.txt").write_text("changed\n", encoding="utf-8")
+    elif damage == "untracked":
+        (source / "new.txt").write_text("x\n", encoding="utf-8")
+    elif damage == "unpublished_commit":
+        (source / "a.txt").write_text("local\n", encoding="utf-8")
+        _git(source, "commit", "-q", "-am", "local", "--no-verify")
+    elif damage == "no_remote":
+        _git(source, "remote", "remove", "origin")
+    else:  # the 2026-10-14 case: an archive of an old tree, not a checkout
+        source = tmp_path / "archive"
+        source.mkdir()
+        (source / "a.txt").write_text("old\n", encoding="utf-8")
+
+    assert module.main(["--source", str(source), "--codex-home", str(tmp_path / "home")]) == 2
+    assert calls == []
+    assert "install refused" in capsys.readouterr().err
+    assert not (tmp_path / "home").exists()
+
+
+def test_forced_install_runs_and_is_recorded(tmp_path, installs):
+    module, calls = installs
+    source = _published_source(tmp_path)
+    (source / "a.txt").write_text("hotfix\n", encoding="utf-8")
+    home = tmp_path / "home"
+
+    assert module.main(["--source", str(source), "--codex-home", str(home), "--force-unpublished", "hotfix"]) == 0
+
+    assert calls == [source]
+    entry = json.loads((home / "harness4codex" / "install-forced.jsonl").read_text(encoding="utf-8").splitlines()[-1])
+    assert entry["reason"] == "hotfix" and "uncommitted" in entry["problem"]
+
+
+def test_forced_install_without_reason_is_refused(tmp_path, installs):
+    module, calls = installs
+    source = _published_source(tmp_path)
+    (source / "a.txt").write_text("x\n", encoding="utf-8")
+
+    assert module.main(["--source", str(source), "--codex-home", str(tmp_path / "h"), "--force-unpublished", " "]) == 2
+    assert calls == []
+
+
+def test_dry_run_does_not_check_the_source(tmp_path, installs):
+    """The dry run writes nothing, so it plans from any tree (the check guards writes)."""
+    module, calls = installs
+    plain = tmp_path / "plain"
+    plain.mkdir()
+
+    assert module.main(["--source", str(plain), "--codex-home", str(tmp_path / "h"), "--dry-run"]) == 0
+    assert calls == [plain]
