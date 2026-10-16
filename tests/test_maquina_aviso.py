@@ -33,7 +33,8 @@ def mh_limpo(monkeypatch: pytest.MonkeyPatch):
     antes = {k: v for k, v in sys.modules.items() if k == "mh" or k.startswith("mh.")}
     for k in antes:
         monkeypatch.delitem(sys.modules, k)
-    monkeypatch.setattr(sys, "path", list(sys.path))
+    # Defesa: nenhuma entrada herdada do `sys.path` que tenha um pacote `mh` pode ser achada pelo `find_spec`.
+    monkeypatch.setattr(sys, "path", [p for p in sys.path if not (Path(p or ".") / "mh" / "__init__.py").is_file()])
     yield
     for k in [k for k in sys.modules if k == "mh" or k.startswith("mh.")]:
         del sys.modules[k]
