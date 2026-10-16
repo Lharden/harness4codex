@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import re
 import sqlite3
@@ -10,7 +11,7 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from . import spool_mirror
+from . import contract, spool_mirror
 from .classifier import classify_prompt
 from .git_guard import inspect_command
 from .harness_lite_adapter import preview_for_prompt
@@ -329,12 +330,51 @@ def _record_memory(store: HarnessStateStore, event: str, text: str, metadata: di
         store.log_error(f"memory record failed for {event}: {type(exc).__name__}: {exc}")
 
 
-def _handle_session_start(event: str, store: HarnessStateStore) -> str:
+def _aviso_maquina(payload: dict[str, Any]) -> str:
+    """O aviso da sincronia entre as maquinas no inicio da sessao do Codex (master-harness, US-4, AC-4.14).
+
+    Paridade com o bloco `MAQUINA_DIGEST` do SessionStart do harness4claude: o `mh` e achado pelo marcador
+    `~/.master-harness/mh-root` (`contract._mh_pelo_marcador`), e `mh.maquina.avisos.ao_iniciar_sessao` le os censos
+    e devolve ate 3 linhas, ou "" quando nao ha o que dizer. Este repositorio so le o aviso: nenhum dado de maquina
+    mora aqui. Sem master-harness, ou com um `mh` sem `mh.maquina.avisos`, silencio; um `mh.maquina` que levanta vira
+    `MAQUINA: NAO VERIFICADO` (AC-4.16), porque silencio ali seria o proprio defeito. Suite sem `MASTER_HARNESS_HOME`
+    proprio nao le a casa real (a regra do espelho do spool).
+    """
+    if spool_mirror.sob_teste_sem_isolamento():
+        return ""
+    try:
+        contract._mh_pelo_marcador()
+        achado = importlib.util.find_spec("mh.maquina.avisos")
+    except ImportError:
+        return ""
+    except Exception as exc:  # o `mh` que levanta no import vira linha, nunca silencio
+        return f"MAQUINA: NAO VERIFICADO - {type(exc).__name__}: {exc}"
+    if achado is None:
+        return ""
+    try:
+        from mh.maquina import avisos  # type: ignore[import-not-found]
+
+        ao_iniciar = avisos.ao_iniciar_sessao
+    except AttributeError:
+        return ""
+    except Exception as exc:
+        return f"MAQUINA: NAO VERIFICADO - {type(exc).__name__}: {exc}"
+    try:
+        return str(ao_iniciar(spool_mirror.casa(), python=sys.executable, cwd=str(_cwd_from_payload(payload))) or "")
+    except Exception as exc:
+        return f"MAQUINA: NAO VERIFICADO - {type(exc).__name__}: {exc}"
+
+
+def _handle_session_start(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
     store.expire_stale_pipeline()
     state = store.load()
+    partes = []
     if state.get("status") in {"active", "verified"} and state.get("pipeline"):
-        return _context_output(event, _task_context(state, "Retome o pipeline ativo."))
-    return ""
+        partes.append(_task_context(state, "Retome o pipeline ativo."))
+    aviso = _aviso_maquina(payload)
+    if aviso:
+        partes.append(aviso)
+    return _context_output(event, "\n\n".join(partes)) if partes else ""
 
 
 def _handle_user_prompt(event: str, payload: dict[str, Any], store: HarnessStateStore) -> str:
@@ -578,7 +618,7 @@ def handle_payload(payload: dict[str, Any], harness_home: str | Path | None = No
     event = _event_name(payload)
     store = store_for_payload(payload, harness_home)
     if event == "SessionStart":
-        return _handle_session_start(event, store)
+        return _handle_session_start(event, payload, store)
     if event == "UserPromptSubmit":
         return _handle_user_prompt(event, payload, store)
     if event == "PreToolUse":
