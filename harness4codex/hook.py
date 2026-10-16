@@ -345,20 +345,22 @@ def _aviso_maquina(payload: dict[str, Any]) -> str:
     try:
         contract._mh_pelo_marcador()
         achado = importlib.util.find_spec("mh.maquina.avisos")
-    except ImportError:
-        return ""
+    except ModuleNotFoundError as exc:
+        # So a ausencia do proprio mh, de mh.maquina ou de mh.maquina.avisos e silencio (um `mh` antigo).
+        if exc.name in {"mh", "mh.maquina", "mh.maquina.avisos"}:
+            return ""
+        return f"MAQUINA: NAO VERIFICADO - {type(exc).__name__}: {exc}"
     except Exception as exc:  # o `mh` que levanta no import vira linha, nunca silencio
         return f"MAQUINA: NAO VERIFICADO - {type(exc).__name__}: {exc}"
     if achado is None:
         return ""
     try:
         from mh.maquina import avisos  # type: ignore[import-not-found]
-
-        ao_iniciar = avisos.ao_iniciar_sessao
-    except AttributeError:
-        return ""
     except Exception as exc:
         return f"MAQUINA: NAO VERIFICADO - {type(exc).__name__}: {exc}"
+    ao_iniciar = getattr(avisos, "ao_iniciar_sessao", None)
+    if ao_iniciar is None:
+        return ""
     try:
         return str(ao_iniciar(spool_mirror.casa(), python=sys.executable, cwd=str(_cwd_from_payload(payload))) or "")
     except Exception as exc:
