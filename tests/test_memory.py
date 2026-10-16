@@ -1,7 +1,48 @@
+import gc
 import json
+import sqlite3
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from harness4codex.memory import HarnessMemoryStore, MemoryConsolidator
+
+
+def test_memory_closes_every_connection_before_returning(tmp_path, monkeypatch):
+    original_connect = sqlite3.connect
+    opened = []
+
+    def tracking_connect(*args, **kwargs):
+        connection = original_connect(*args, **kwargs)
+        opened.append(connection)
+        return connection
+
+    monkeypatch.setattr("harness4codex.memory.sqlite3.connect", tracking_connect)
+    store = HarnessMemoryStore(tmp_path)
+    store.record_history("UserPromptSubmit", "teste")
+    store.remember("s", "k", "key", "v", "manual")
+    store.search("teste")
+    store.list_memories()
+    store.history_count()
+
+    assert len(opened) == 6
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError, match="closed"):
+            connection.execute("SELECT 1")
+
+
+def test_memory_operations_leave_no_sqlite_resource_warning(tmp_path):
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ResourceWarning)
+        store = HarnessMemoryStore(tmp_path)
+        gc.collect()
+        store.record_history("UserPromptSubmit", "teste de aviso")
+        gc.collect()
+        store.search("aviso")
+        gc.collect()
+    leaked = [w for w in caught if issubclass(w.category, ResourceWarning) and "sqlite3.Connection" in str(w.message)]
+    assert leaked == [], [str(w.message) for w in leaked]
 
 
 def test_memory_records_and_searches_history(tmp_path):
